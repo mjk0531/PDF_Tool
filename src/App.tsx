@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
+import { Landing } from './components/Landing'
 import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
 import type { ToolId } from './tools/registry'
 
@@ -40,28 +41,38 @@ const TOOL_COMPONENTS: Record<ToolId, React.ComponentType> = {
   ocr: Ocr,
 }
 
-function getInitialTool(): ToolId {
+function getInitialTool(): ToolId | null {
   const hash = window.location.hash.replace(/^#/, '') as ToolId
   if (hash in TOOL_COMPONENTS) return hash
-  return 'pdf-to-image'
+  return null
 }
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
-  const [tool, setTool] = useState<ToolId>(() => getInitialTool())
+  const [tool, setTool] = useState<ToolId | null>(() => getInitialTool())
 
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
 
   useEffect(() => {
-    window.location.hash = tool
+    if (tool) {
+      if (window.location.hash !== `#${tool}`) {
+        history.replaceState(null, '', `#${tool}`)
+      }
+    } else if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
   }, [tool])
 
   useEffect(() => {
     const handler = () => {
-      const hash = window.location.hash.replace(/^#/, '') as ToolId
-      if (hash in TOOL_COMPONENTS) setTool(hash)
+      const raw = window.location.hash.replace(/^#/, '')
+      if (!raw) {
+        setTool(null)
+        return
+      }
+      if (raw in TOOL_COMPONENTS) setTool(raw as ToolId)
     }
     window.addEventListener('hashchange', handler)
     return () => window.removeEventListener('hashchange', handler)
@@ -71,14 +82,18 @@ export default function App() {
     setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
   }, [])
 
-  const ToolComponent = TOOL_COMPONENTS[tool]
+  const goHome = useCallback(() => {
+    setTool(null)
+  }, [])
+
+  const ToolComponent = tool ? TOOL_COMPONENTS[tool] : null
 
   return (
     <div className="h-full flex flex-col bg-bg text-fg">
-      <TitleBar theme={theme} onToggleTheme={toggleTheme} />
+      <TitleBar theme={theme} onToggleTheme={toggleTheme} onHome={goHome} />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar current={tool} onSelect={setTool} />
-        <ToolComponent key={tool} />
+        {ToolComponent ? <ToolComponent key={tool!} /> : <Landing onSelect={setTool} />}
       </div>
     </div>
   )

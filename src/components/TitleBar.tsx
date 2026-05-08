@@ -4,20 +4,25 @@ import type { Theme } from '../lib/theme'
 interface Props {
   theme: Theme
   onToggleTheme: () => void
+  onHome?: () => void
 }
 
-export function TitleBar({ theme, onToggleTheme }: Props) {
+export function TitleBar({ theme, onToggleTheme, onHome }: Props) {
   return (
     <header className="flex items-center justify-between px-5 h-14 border-b border-border bg-bg-elevated/50 backdrop-blur-md sticky top-0 z-10">
-      <div className="flex items-center gap-2.5">
+      <button
+        onClick={onHome}
+        className="flex items-center gap-2.5 -mx-2 px-2 py-1 rounded-lg hover:bg-bg-subtle transition-colors"
+        aria-label="Go to home"
+      >
         <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
           <FileImage className="w-4.5 h-4.5 text-accent" strokeWidth={2.25} />
         </div>
-        <div className="flex flex-col leading-tight">
+        <div className="flex flex-col leading-tight text-left">
           <span className="text-sm font-semibold tracking-tight">PDF Toolkit</span>
           <span className="text-[11px] text-fg-subtle">16 tools · Browser-based · Private</span>
         </div>
-      </div>
+      </button>
 
       <div className="flex items-center gap-1">
         <button

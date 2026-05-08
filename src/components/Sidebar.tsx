@@ -1,7 +1,7 @@
 import { CATEGORY_LABELS, TOOLS_BY_CATEGORY, type ToolId } from '../tools/registry'
 
 interface Props {
-  current: ToolId
+  current: ToolId | null
   onSelect: (id: ToolId) => void
 }
 
