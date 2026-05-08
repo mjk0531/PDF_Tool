@@ -6,8 +6,8 @@ interface Props {
 }
 
 const CATEGORY_ORDER: (keyof typeof CATEGORY_LABELS)[] = [
-  'convert',
   'organize',
+  'convert',
   'extract',
   'secure',
   'ocr',
