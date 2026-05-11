@@ -5,7 +5,11 @@ export default defineConfig({
   plugins: [react()],
   base: '/PDF_Tool/',
   build: {
-    target: 'es2020',
+    // mupdf (the compress engine) uses top-level await, which needs es2022+.
+    target: 'es2022',
+  },
+  optimizeDeps: {
+    exclude: ['mupdf'],
   },
   worker: {
     format: 'es',
