@@ -5,6 +5,8 @@ import {
   PDFName,
   PDFNumber,
   PDFRawStream,
+  StandardFonts,
+  rgb,
   degrees,
   type PDFEmbeddedPage,
   type PDFRef,
@@ -613,6 +615,138 @@ export const SMART_COMPRESS_PRESET: SmartCompressOptions = {
   maxImagePx: 1280,
   onlyShrink: true,
   stripMetadata: true,
+}
+
+/* ---------- Hybrid compression (rasterize + invisible text overlay) ---------- */
+
+export interface HybridCompressOptions {
+  dpi: number // page rendering DPI (e.g. 144 = good screen quality)
+  imageQuality: number // JPEG quality 0..1 for rendered pages
+}
+
+export interface HybridCompressResult {
+  bytes: Uint8Array
+  originalSize: number
+  outputSize: number
+  pages: number
+  textItemsOverlaid: number
+  textItemsSkipped: number
+}
+
+/**
+ * Rasterize each page to a JPEG and reassemble into a new PDF, with the
+ * original text drawn behind the image so the document remains selectable.
+ *
+ * This is how commercial tools achieve big shrinkage on PDFs whose bulk is
+ * embedded fonts (typical of CJK / multilingual docs). The new PDF embeds
+ * one common Latin font (Helvetica) and one JPEG per page. CJK characters
+ * that Helvetica cannot encode are silently skipped — they remain visible
+ * in the page image, just not selectable.
+ *
+ * Trade-off: visual fidelity caps at the chosen DPI. Pure-text PDFs may end
+ * up *larger* than the original since you're replacing efficient text with
+ * a raster image, so this mode is meant for the fallback path when smart
+ * compression didn't move the needle.
+ */
+export async function compressPdfHybrid(
+  file: File,
+  options: HybridCompressOptions,
+  onProgress?: (current: number, total: number, status: string) => void,
+): Promise<HybridCompressResult> {
+  const originalSize = file.size
+  const srcPdfJs = await loadPdfJs(file)
+  const outPdf = await PDFDocument.create()
+  const helvetica = await outPdf.embedFont(StandardFonts.Helvetica)
+
+  const totalPages = srcPdfJs.numPages
+  let textItemsOverlaid = 0
+  let textItemsSkipped = 0
+
+  for (let i = 1; i <= totalPages; i++) {
+    onProgress?.(i - 1, totalPages, `Rendering page ${i} of ${totalPages}...`)
+
+    const page = await srcPdfJs.getPage(i)
+    const viewportPt = page.getViewport({ scale: 1 })
+    const pageW = viewportPt.width
+    const pageH = viewportPt.height
+
+    // Render at chosen DPI
+    const renderScale = options.dpi / 72
+    const renderViewport = page.getViewport({ scale: renderScale })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(renderViewport.width)
+    canvas.height = Math.ceil(renderViewport.height)
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    await page.render({ canvasContext: ctx, viewport: renderViewport }).promise
+
+    // Encode rendered page as JPEG
+    const blob: Blob = await new Promise((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('toBlob failed'))),
+        'image/jpeg',
+        options.imageQuality,
+      ),
+    )
+    const blobArr = new Uint8Array(await blob.arrayBuffer())
+    const jpgBuf = new ArrayBuffer(blobArr.byteLength)
+    new Uint8Array(jpgBuf).set(blobArr)
+    const jpgImage = await outPdf.embedJpg(jpgBuf)
+
+    // Pull text content for overlay
+    const textContent = await page.getTextContent()
+
+    const newPage = outPdf.addPage([pageW, pageH])
+
+    // Draw the original text FIRST (will end up behind the image in z-order)
+    // The text is in the document but visually covered by the JPEG that we'll
+    // paint on top — PDF readers can still select/copy/search it.
+    for (const raw of textContent.items as Array<{ str: string; transform: number[] }>) {
+      if (!raw.str || !raw.str.trim()) continue
+      const x = raw.transform[4]
+      const y = raw.transform[5]
+      const fontSize = Math.abs(raw.transform[3]) || 10
+
+      try {
+        newPage.drawText(raw.str, {
+          x,
+          y,
+          size: fontSize,
+          font: helvetica,
+          color: rgb(0, 0, 0),
+        })
+        textItemsOverlaid += 1
+      } catch {
+        // Helvetica (WinAnsi) cannot encode the character (e.g., CJK).
+        // We skip the text overlay for these items; the chars remain visible
+        // in the rendered image, just not selectable.
+        textItemsSkipped += 1
+      }
+    }
+
+    // Now draw the rendered page image full-bleed, covering the text behind it
+    newPage.drawImage(jpgImage, { x: 0, y: 0, width: pageW, height: pageH })
+
+    page.cleanup()
+    onProgress?.(i, totalPages, `Page ${i} of ${totalPages} done`)
+  }
+
+  onProgress?.(totalPages, totalPages, 'Saving...')
+  const bytes = await outPdf.save({ useObjectStreams: true })
+  return {
+    bytes,
+    originalSize,
+    outputSize: bytes.byteLength,
+    pages: totalPages,
+    textItemsOverlaid,
+    textItemsSkipped,
+  }
+}
+
+export const HYBRID_COMPRESS_PRESET: HybridCompressOptions = {
+  dpi: 144,
+  imageQuality: 0.65,
 }
 
 /**

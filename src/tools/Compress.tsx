@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Sparkles, FileText, AlertCircle, Minimize2 } from 'lucide-react'
+import { Sparkles, FileText, AlertCircle, Minimize2, Layers } from 'lucide-react'
 import { ToolHeader } from '../components/shared/ToolHeader'
 import { FileDrop } from '../components/shared/FileDrop'
 import { FilePill } from '../components/shared/FilePill'
@@ -7,9 +7,12 @@ import { ProgressBar } from '../components/ProgressBar'
 import { StatusPanel } from '../components/shared/StatusPanel'
 import {
   compressPdfByRasterization,
+  compressPdfHybrid,
   compressPdfSmart,
   getPageCount,
+  HYBRID_COMPRESS_PRESET,
   SMART_COMPRESS_PRESET,
+  type HybridCompressResult,
   type SmartCompressResult,
 } from '../lib/pdfOps'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
@@ -18,17 +21,18 @@ import { TOOLS } from './registry'
 
 const meta = TOOLS.find((t) => t.id === 'compress')!
 
-// Compression is "good enough" if the output is ≤ 90% of original
-const POOR_RESULT_THRESHOLD = 0.9
+// "Good enough" = output ≤ 80% of original
+const POOR_RESULT_THRESHOLD = 0.8
 
-type Mode = 'smart' | 'maximum'
+type Mode = 'smart' | 'hybrid' | 'maximum'
 
 interface CompressionResult {
   blob: Blob
   size: number
   oldSize: number
   mode: Mode
-  details?: SmartCompressResult
+  smartDetails?: SmartCompressResult
+  hybridDetails?: HybridCompressResult
 }
 
 export function Compress() {
@@ -58,7 +62,37 @@ export function Compress() {
         setProgress({ c, t, label }),
       )
       const blob = bytesToBlob(out.bytes, 'application/pdf')
-      setResult({ blob, size: blob.size, oldSize: out.originalSize, mode: 'smart', details: out })
+      setResult({
+        blob,
+        size: blob.size,
+        oldSize: out.originalSize,
+        mode: 'smart',
+        smartDetails: out,
+      })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Compression failed')
+    } finally {
+      setRunning(false)
+      setProgress(null)
+    }
+  }
+
+  const runHybrid = async () => {
+    if (!file) return
+    setRunning(true)
+    setResult(null)
+    try {
+      const out = await compressPdfHybrid(file, HYBRID_COMPRESS_PRESET, (c, t, label) =>
+        setProgress({ c, t, label }),
+      )
+      const blob = bytesToBlob(out.bytes, 'application/pdf')
+      setResult({
+        blob,
+        size: blob.size,
+        oldSize: out.originalSize,
+        mode: 'hybrid',
+        hybridDetails: out,
+      })
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Compression failed')
     } finally {
@@ -98,8 +132,7 @@ export function Compress() {
 
   const ratio = result ? result.size / result.oldSize : 0
   const saved = result ? result.oldSize - result.size : 0
-  const isPoorResult =
-    result?.mode === 'smart' && ratio > POOR_RESULT_THRESHOLD
+  const isPoorSmart = result?.mode === 'smart' && ratio > POOR_RESULT_THRESHOLD
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -155,7 +188,10 @@ export function Compress() {
             >
               <button
                 onClick={() =>
-                  downloadBlob(result.blob, `${stripExtension(file.name)}_compressed.pdf`)
+                  downloadBlob(
+                    result.blob,
+                    `${stripExtension(file.name)}_${result.mode === 'maximum' ? 'rasterized' : result.mode === 'hybrid' ? 'compact' : 'compressed'}.pdf`,
+                  )
                 }
                 className="btn-primary"
               >
@@ -163,32 +199,32 @@ export function Compress() {
               </button>
             </StatusPanel>
 
-            {result.mode === 'smart' && result.details && (
+            {result.mode === 'smart' && result.smartDetails && (
               <div className="card p-4 text-xs text-fg-muted space-y-1.5">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle mb-1">
                   What was processed
                 </div>
                 <div className="flex justify-between">
                   <span>Embedded images found</span>
-                  <span className="font-mono text-fg">{result.details.imagesFound}</span>
+                  <span className="font-mono text-fg">{result.smartDetails.imagesFound}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Recompressed (JPEG / PNG)</span>
                   <span className="font-mono text-fg">
-                    {result.details.imagesFormats.jpeg} / {result.details.imagesFormats.flate}
+                    {result.smartDetails.imagesFormats.jpeg} / {result.smartDetails.imagesFormats.flate}
                   </span>
                 </div>
-                {result.details.imagesFormats.other > 0 && (
+                {result.smartDetails.imagesFormats.other > 0 && (
                   <div className="flex justify-between text-fg-subtle">
                     <span>Skipped (unsupported format)</span>
-                    <span className="font-mono">{result.details.imagesFormats.other}</span>
+                    <span className="font-mono">{result.smartDetails.imagesFormats.other}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span>Replaced (output smaller)</span>
-                  <span className="font-mono text-fg">{result.details.imagesReplaced}</span>
+                  <span className="font-mono text-fg">{result.smartDetails.imagesReplaced}</span>
                 </div>
-                {result.details.metadataStripped && (
+                {result.smartDetails.metadataStripped && (
                   <div className="flex justify-between text-fg-subtle">
                     <span>Metadata / thumbnails / attachments</span>
                     <span className="font-mono">stripped</span>
@@ -197,35 +233,83 @@ export function Compress() {
               </div>
             )}
 
-            {isPoorResult && (
-              <div className="card p-4 border-amber-500/30 bg-amber-500/5">
-                <div className="flex items-start gap-2.5 mb-3">
-                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                  <div className="text-xs text-fg-muted leading-relaxed">
-                    <strong className="text-fg">Not much to compress.</strong>{' '}
-                    {result.details && result.details.imagesFound === 0
-                      ? "This PDF has no embedded raster images — its size is mostly fonts, vectors, or other content that smart compression can't touch."
-                      : result.details && result.details.imagesReplaced === 0
-                        ? "The embedded images were already heavily compressed — re-encoding wouldn't have made them smaller."
-                        : 'The bulk of this file is fonts, vectors, or content streams — not images.'}
-                  </div>
+            {result.mode === 'hybrid' && result.hybridDetails && (
+              <div className="card p-4 text-xs text-fg-muted space-y-1.5">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle mb-1">
+                  Compact mode details
                 </div>
-                <div className="text-xs text-fg-muted leading-relaxed mb-3 flex items-start gap-2.5">
-                  <Minimize2 className="w-4 h-4 text-fg-muted shrink-0 mt-0.5" />
-                  <span>
-                    For maximum reduction, you can rasterize every page to JPEG.{' '}
-                    <strong className="text-fg">Text becomes raster</strong> (no longer selectable
-                    or searchable) but the file will shrink significantly.
+                <div className="flex justify-between">
+                  <span>Pages rasterized</span>
+                  <span className="font-mono text-fg">{result.hybridDetails.pages}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Text items kept selectable</span>
+                  <span className="font-mono text-fg">
+                    {result.hybridDetails.textItemsOverlaid.toLocaleString()}
                   </span>
                 </div>
-                <button
-                  onClick={runMaximum}
-                  disabled={running}
-                  className="btn-secondary w-full"
-                >
-                  <Minimize2 className="w-4 h-4" />
-                  Rasterize everything (lose selectable text)
-                </button>
+                {result.hybridDetails.textItemsSkipped > 0 && (
+                  <div className="flex justify-between text-fg-subtle">
+                    <span>Text items visual-only (non-Latin)</span>
+                    <span className="font-mono">
+                      {result.hybridDetails.textItemsSkipped.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isPoorSmart && (
+              <div className="card p-4 border-amber-500/30 bg-amber-500/5 space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="text-xs text-fg-muted leading-relaxed">
+                    <strong className="text-fg">Not much in the images.</strong>{' '}
+                    {result.smartDetails && result.smartDetails.imagesFound === 0
+                      ? "This PDF has no embedded raster images."
+                      : 'The embedded images were small. The bulk is likely fonts (especially CJK) or content streams.'}{' '}
+                    Try a more aggressive mode below.
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <button
+                    onClick={runHybrid}
+                    disabled={running}
+                    className="btn-secondary w-full"
+                  >
+                    <Layers className="w-4 h-4" />
+                    Compact (text stays selectable, much smaller)
+                  </button>
+                  <p className="text-[11px] text-fg-subtle leading-relaxed pl-1">
+                    Renders each page as an image at 144 DPI and overlays the original text behind it so you can still select & copy. Works regardless of which fonts the PDF uses — that's why it shrinks CJK-heavy files dramatically.
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <button
+                    onClick={runMaximum}
+                    disabled={running}
+                    className="btn-secondary w-full"
+                  >
+                    <Minimize2 className="w-4 h-4" />
+                    Maximum (text becomes raster)
+                  </button>
+                  <p className="text-[11px] text-fg-subtle leading-relaxed pl-1">
+                    Smallest possible file but no selectable text. Last resort.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {result.mode === 'hybrid' && (
+              <div className="card p-3 flex items-start gap-2">
+                <FileText className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+                <p className="text-[11px] text-fg-muted leading-relaxed">
+                  Each page is now a 144 DPI JPEG with the original text invisible behind it.
+                  Most text is selectable & searchable. Non-Latin characters remain visible in
+                  the image but aren't selectable.
+                </p>
               </div>
             )}
 
