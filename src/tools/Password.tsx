@@ -56,7 +56,8 @@ export function Password() {
         )
         return
       }
-      const bytes = await removePassword(file, password)
+      const bytes = await removePassword(file)
+      void password // signaled via UI hint only; pdf-lib's ignoreEncryption path doesn't use it
       setResult(bytesToBlob(bytes, 'application/pdf'))
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Operation failed')
