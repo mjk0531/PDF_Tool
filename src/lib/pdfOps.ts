@@ -269,6 +269,7 @@ export interface ImageRecompressStats {
   otherSkipped: number
 }
 
+
 export interface CompressResult {
   bytes: Uint8Array
   imageStats: ImageRecompressStats
@@ -417,15 +418,25 @@ async function recompressEmbeddedImages(
   new Uint8Array(ab).set(bytes)
   const pdf = await PDFDocument.load(ab, { ignoreEncryption: true })
 
+  // First pass: find SMask references so we don't process them as standalone
+  // images (they ARE alpha channels for other images, not independent visuals).
+  const smaskRefs = new Set<string>()
+  for (const [, obj] of pdf.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream)) continue
+    const sm = obj.dict.get(PDFName.of('SMask'))
+    if (sm) smaskRefs.add(sm.toString())
+    const m = obj.dict.get(PDFName.of('Mask'))
+    if (m) smaskRefs.add(m.toString())
+  }
+
   const candidates: { ref: PDFRef; stream: PDFRawStream }[] = []
   for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) {
     if (!(obj instanceof PDFRawStream)) continue
     const d = obj.dict
     const subtype = d.get(PDFName.of('Subtype'))
     if (subtype !== PDFName.of('Image')) continue
-    // Skip transparency masks
-    if (d.get(PDFName.of('SMask')) !== undefined) continue
-    if (d.get(PDFName.of('Mask')) !== undefined) continue
+    // Don't process SMask streams as if they were visible images
+    if (smaskRefs.has(ref.toString())) continue
     candidates.push({ ref, stream: obj })
   }
 
