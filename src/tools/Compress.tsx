@@ -1,25 +1,15 @@
 import { useState } from 'react'
-import {
-  Sparkles,
-  Sliders,
-  Image as ImageIcon,
-  Palette,
-  FileText,
-  Layers,
-  AlertCircle,
-} from 'lucide-react'
+import { Sparkles, FileText, AlertCircle, Minimize2 } from 'lucide-react'
 import { ToolHeader } from '../components/shared/ToolHeader'
 import { FileDrop } from '../components/shared/FileDrop'
 import { FilePill } from '../components/shared/FilePill'
-import { OptionGroup, Segmented } from '../components/shared/OptionGroup'
 import { ProgressBar } from '../components/ProgressBar'
 import { StatusPanel } from '../components/shared/StatusPanel'
 import {
   compressPdfByRasterization,
   compressPdfSmart,
   getPageCount,
-  type CompressOptions,
-  type SmartCompressOptions,
+  SMART_COMPRESS_PRESET,
   type SmartCompressResult,
 } from '../lib/pdfOps'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
@@ -27,6 +17,9 @@ import { stripExtension } from '../lib/converter'
 import { TOOLS } from './registry'
 
 const meta = TOOLS.find((t) => t.id === 'compress')!
+
+// Compression is "good enough" if the output is ≤ 90% of original
+const POOR_RESULT_THRESHOLD = 0.9
 
 type Mode = 'smart' | 'maximum'
 
@@ -41,17 +34,6 @@ interface CompressionResult {
 export function Compress() {
   const [file, setFile] = useState<File | null>(null)
   const [pageCount, setPageCount] = useState<number | null>(null)
-  const [mode, setMode] = useState<Mode>('smart')
-  const [smartOpts, setSmartOpts] = useState<SmartCompressOptions>({
-    imageQuality: 0.7,
-    maxImagePx: 1600,
-    onlyShrink: true,
-  })
-  const [maxOpts, setMaxOpts] = useState<CompressOptions>({
-    imageDpi: 150,
-    imageQuality: 0.7,
-    grayscale: false,
-  })
   const [progress, setProgress] = useState<{ c: number; t: number; label: string } | null>(null)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<CompressionResult | null>(null)
@@ -67,30 +49,36 @@ export function Compress() {
     }
   }
 
-  const run = async () => {
+  const runSmart = async () => {
     if (!file) return
     setRunning(true)
     setResult(null)
     try {
-      if (mode === 'smart') {
-        const out = await compressPdfSmart(file, smartOpts, (c, t) =>
-          setProgress({ c, t, label: `Recompressing image ${c} of ${t}...` }),
-        )
-        const blob = bytesToBlob(out.bytes, 'application/pdf')
-        setResult({
-          blob,
-          size: blob.size,
-          oldSize: out.originalSize,
-          mode: 'smart',
-          details: out,
-        })
-      } else {
-        const bytes = await compressPdfByRasterization(file, maxOpts, (c, t) =>
-          setProgress({ c, t, label: `Rasterizing page ${c} of ${t}...` }),
-        )
-        const blob = bytesToBlob(bytes, 'application/pdf')
-        setResult({ blob, size: blob.size, oldSize: file.size, mode: 'maximum' })
-      }
+      const out = await compressPdfSmart(file, SMART_COMPRESS_PRESET, (c, t, label) =>
+        setProgress({ c, t, label }),
+      )
+      const blob = bytesToBlob(out.bytes, 'application/pdf')
+      setResult({ blob, size: blob.size, oldSize: out.originalSize, mode: 'smart', details: out })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Compression failed')
+    } finally {
+      setRunning(false)
+      setProgress(null)
+    }
+  }
+
+  const runMaximum = async () => {
+    if (!file) return
+    setRunning(true)
+    setResult(null)
+    try {
+      const bytes = await compressPdfByRasterization(
+        file,
+        { imageDpi: 120, imageQuality: 0.6, grayscale: false },
+        (c, t) => setProgress({ c, t, label: `Rasterizing page ${c} of ${t}...` }),
+      )
+      const blob = bytesToBlob(bytes, 'application/pdf')
+      setResult({ blob, size: blob.size, oldSize: file.size, mode: 'maximum' })
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Compression failed')
     } finally {
@@ -110,6 +98,8 @@ export function Compress() {
 
   const ratio = result ? result.size / result.oldSize : 0
   const saved = result ? result.oldSize - result.size : 0
+  const isPoorResult =
+    result?.mode === 'smart' && ratio > POOR_RESULT_THRESHOLD
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -118,147 +108,38 @@ export function Compress() {
         title={meta.name}
         description={meta.description}
         rightSlot={
-          <button onClick={run} disabled={running} className="btn-primary">
+          <button onClick={runSmart} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
             {running ? 'Compressing...' : 'Compress'}
           </button>
         }
       />
-      <div className="flex-1 flex overflow-hidden">
-        <aside className="w-80 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-6">
-          <FilePill
-            file={file}
-            detail={pageCount ? `${pageCount} pages` : undefined}
-            onRemove={() => {
-              setFile(null)
-              setResult(null)
-            }}
-          />
+      <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full space-y-5">
+        <FilePill
+          file={file}
+          detail={pageCount ? `${pageCount} pages` : undefined}
+          onRemove={() => {
+            setFile(null)
+            setResult(null)
+          }}
+        />
 
-          <OptionGroup
-            icon={Layers}
-            title="Mode"
-            hint={
-              mode === 'smart'
-                ? 'Keeps text selectable. Only recompresses embedded images.'
-                : 'Maximum size reduction. Text becomes raster (not selectable).'
-            }
+        {!result && !running && (
+          <StatusPanel
+            variant="info"
+            title="Ready to compress"
+            message={`${formatBytes(file.size)} · ${pageCount ?? '?'} pages. Press Compress in the top right.`}
           >
-            <Segmented
-              value={mode}
-              options={[
-                { value: 'smart', label: 'Smart' },
-                { value: 'maximum', label: 'Maximum' },
-              ]}
-              onChange={(v) => {
-                setMode(v as Mode)
-                setResult(null)
-              }}
-              disabled={running}
-            />
-          </OptionGroup>
+            <div className="text-[11px] text-fg-subtle leading-relaxed">
+              <strong className="text-fg-muted">How it works:</strong> embedded images get downsampled and re-encoded. Text, fonts, and vectors are preserved — your output stays selectable and searchable.
+            </div>
+          </StatusPanel>
+        )}
 
-          {mode === 'smart' ? (
-            <>
-              <OptionGroup icon={ImageIcon} title="Image Quality">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-fg-muted">JPEG quality</span>
-                  <span className="font-mono text-fg">
-                    {Math.round(smartOpts.imageQuality * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0.3}
-                  max={0.95}
-                  step={0.05}
-                  value={smartOpts.imageQuality}
-                  onChange={(e) =>
-                    setSmartOpts({ ...smartOpts, imageQuality: Number(e.target.value) })
-                  }
-                  disabled={running}
-                  className="w-full"
-                />
-              </OptionGroup>
+        {progress && <ProgressBar current={progress.c} total={progress.t || 1} label={progress.label} />}
 
-              <OptionGroup
-                icon={Sliders}
-                title="Max Image Dimension"
-                hint="Downsamples oversized images (largest side, in pixels). 0 = no limit."
-              >
-                <Segmented
-                  value={smartOpts.maxImagePx}
-                  options={[
-                    { value: 0, label: 'None' },
-                    { value: 1200, label: '1200' },
-                    { value: 1600, label: '1600' },
-                    { value: 2400, label: '2400' },
-                  ]}
-                  onChange={(v) => setSmartOpts({ ...smartOpts, maxImagePx: v })}
-                  disabled={running}
-                />
-              </OptionGroup>
-
-              <div className="card p-3 flex items-start gap-2">
-                <FileText className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-                <p className="text-[11px] text-fg-muted leading-relaxed">
-                  <strong className="text-fg">Smart mode</strong> preserves text, fonts, and vectors. Only embedded photos and screenshots get recompressed. PDFs without big images won't shrink much — that's a feature, not a bug.
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <OptionGroup icon={Sliders} title="Image DPI" hint="Lower = smaller file, lower visual quality">
-                <Segmented
-                  value={maxOpts.imageDpi}
-                  options={[72, 96, 150, 200, 300].map((v) => ({ value: v, label: `${v}` }))}
-                  onChange={(v) => setMaxOpts({ ...maxOpts, imageDpi: v })}
-                  disabled={running}
-                />
-              </OptionGroup>
-
-              <OptionGroup icon={ImageIcon} title="JPEG Quality">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-fg-muted">Quality</span>
-                  <span className="font-mono text-fg">{Math.round(maxOpts.imageQuality * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min={0.3}
-                  max={0.95}
-                  step={0.05}
-                  value={maxOpts.imageQuality}
-                  onChange={(e) => setMaxOpts({ ...maxOpts, imageQuality: Number(e.target.value) })}
-                  disabled={running}
-                  className="w-full"
-                />
-              </OptionGroup>
-
-              <OptionGroup icon={Palette} title="Color">
-                <Segmented
-                  value={maxOpts.grayscale ? 'gray' : 'color'}
-                  options={[
-                    { value: 'color', label: 'Color' },
-                    { value: 'gray', label: 'Grayscale' },
-                  ]}
-                  onChange={(v) => setMaxOpts({ ...maxOpts, grayscale: v === 'gray' })}
-                  disabled={running}
-                />
-              </OptionGroup>
-
-              <div className="card p-3 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-[11px] text-fg-muted leading-relaxed">
-                  <strong className="text-fg">Maximum mode</strong> rasterizes every page. Text in the output is no longer selectable or searchable. Use only when smart mode doesn't shrink enough and you don't need text.
-                </p>
-              </div>
-            </>
-          )}
-        </aside>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {progress && <ProgressBar current={progress.c} total={progress.t || 1} label={progress.label} />}
-          {result && (
+        {result && (
+          <>
             <StatusPanel
               variant={ratio < 1 ? 'success' : 'info'}
               title={
@@ -268,14 +149,8 @@ export function Compress() {
               }
               message={
                 ratio < 1
-                  ? `Saved ${formatBytes(saved)} (${formatBytes(result.oldSize)} → ${formatBytes(result.size)})${
-                      result.details
-                        ? ` · ${result.details.imagesReplaced}/${result.details.imagesFound} images replaced`
-                        : ''
-                    }`
-                  : result.mode === 'smart' && result.details && result.details.imagesFound === 0
-                    ? "This PDF has no embedded images to recompress. Try Maximum mode if you need a smaller file (but text will become raster)."
-                    : `${formatBytes(result.oldSize)} → ${formatBytes(result.size)}. Try lower quality or switch modes.`
+                  ? `Saved ${formatBytes(saved)} · ${formatBytes(result.oldSize)} → ${formatBytes(result.size)}`
+                  : `${formatBytes(result.oldSize)} → ${formatBytes(result.size)}`
               }
             >
               <button
@@ -287,19 +162,84 @@ export function Compress() {
                 Download compressed PDF
               </button>
             </StatusPanel>
-          )}
-          {!result && !running && (
-            <StatusPanel
-              variant="info"
-              title="Ready to compress"
-              message={`${formatBytes(file.size)} · ${pageCount ?? '?'} pages. ${
-                mode === 'smart'
-                  ? 'Smart mode preserves text and only shrinks embedded images.'
-                  : 'Maximum mode rasterizes the whole document.'
-              }`}
-            />
-          )}
-        </div>
+
+            {result.mode === 'smart' && result.details && (
+              <div className="card p-4 text-xs text-fg-muted space-y-1.5">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle mb-1">
+                  What was processed
+                </div>
+                <div className="flex justify-between">
+                  <span>Embedded images found</span>
+                  <span className="font-mono text-fg">{result.details.imagesFound}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Recompressed (JPEG / PNG)</span>
+                  <span className="font-mono text-fg">
+                    {result.details.imagesFormats.jpeg} / {result.details.imagesFormats.flate}
+                  </span>
+                </div>
+                {result.details.imagesFormats.other > 0 && (
+                  <div className="flex justify-between text-fg-subtle">
+                    <span>Skipped (unsupported format)</span>
+                    <span className="font-mono">{result.details.imagesFormats.other}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Replaced (output smaller)</span>
+                  <span className="font-mono text-fg">{result.details.imagesReplaced}</span>
+                </div>
+                {result.details.metadataStripped && (
+                  <div className="flex justify-between text-fg-subtle">
+                    <span>Metadata / thumbnails / attachments</span>
+                    <span className="font-mono">stripped</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isPoorResult && (
+              <div className="card p-4 border-amber-500/30 bg-amber-500/5">
+                <div className="flex items-start gap-2.5 mb-3">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="text-xs text-fg-muted leading-relaxed">
+                    <strong className="text-fg">Not much to compress.</strong>{' '}
+                    {result.details && result.details.imagesFound === 0
+                      ? "This PDF has no embedded raster images — its size is mostly fonts, vectors, or other content that smart compression can't touch."
+                      : result.details && result.details.imagesReplaced === 0
+                        ? "The embedded images were already heavily compressed — re-encoding wouldn't have made them smaller."
+                        : 'The bulk of this file is fonts, vectors, or content streams — not images.'}
+                  </div>
+                </div>
+                <div className="text-xs text-fg-muted leading-relaxed mb-3 flex items-start gap-2.5">
+                  <Minimize2 className="w-4 h-4 text-fg-muted shrink-0 mt-0.5" />
+                  <span>
+                    For maximum reduction, you can rasterize every page to JPEG.{' '}
+                    <strong className="text-fg">Text becomes raster</strong> (no longer selectable
+                    or searchable) but the file will shrink significantly.
+                  </span>
+                </div>
+                <button
+                  onClick={runMaximum}
+                  disabled={running}
+                  className="btn-secondary w-full"
+                >
+                  <Minimize2 className="w-4 h-4" />
+                  Rasterize everything (lose selectable text)
+                </button>
+              </div>
+            )}
+
+            {result.mode === 'maximum' && (
+              <div className="card p-3 flex items-start gap-2">
+                <FileText className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-fg-muted leading-relaxed">
+                  Output was rasterized — text in the file is now an image and is no longer
+                  selectable.
+                </p>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   )
