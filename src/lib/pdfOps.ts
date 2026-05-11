@@ -1,10 +1,13 @@
 import {
   PDFDocument,
+  PDFArray,
   PDFDict,
   PDFName,
+  PDFNumber,
   PDFRawStream,
   degrees,
   type PDFEmbeddedPage,
+  type PDFRef,
 } from 'pdf-lib'
 import { pdfjsLib } from './pdfWorker'
 
@@ -257,8 +260,18 @@ export interface StructureBreakdown {
   signatureCount: number
 }
 
+export interface ImageRecompressStats {
+  imagesFound: number
+  imagesReplaced: number
+  bytesSaved: number
+  jpegHandled: number
+  flateHandled: number
+  otherSkipped: number
+}
+
 export interface CompressResult {
   bytes: Uint8Array
+  imageStats: ImageRecompressStats
   originalSize: number
   outputSize: number
   breakdown: StructureBreakdown
@@ -388,35 +401,296 @@ async function analyzeStructure(bytes: Uint8Array): Promise<StructureBreakdown> 
   }
 }
 
-export async function compressPdf(
-  file: File,
-  onProgress?: (status: string) => void,
-): Promise<CompressResult> {
-  const originalSize = file.size
+/* ---------- Phase 1: image recompression (pdf-lib + canvas) ---------- */
 
+interface RecompressOptions {
+  imageQuality: number
+  maxImagePx: number
+}
+
+async function recompressEmbeddedImages(
+  bytes: Uint8Array,
+  options: RecompressOptions,
+  onProgress?: (current: number, total: number) => void,
+): Promise<{ bytes: Uint8Array; stats: ImageRecompressStats }> {
+  const ab = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(ab).set(bytes)
+  const pdf = await PDFDocument.load(ab, { ignoreEncryption: true })
+
+  const candidates: { ref: PDFRef; stream: PDFRawStream }[] = []
+  for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream)) continue
+    const d = obj.dict
+    const subtype = d.get(PDFName.of('Subtype'))
+    if (subtype !== PDFName.of('Image')) continue
+    // Skip transparency masks
+    if (d.get(PDFName.of('SMask')) !== undefined) continue
+    if (d.get(PDFName.of('Mask')) !== undefined) continue
+    candidates.push({ ref, stream: obj })
+  }
+
+  const stats: ImageRecompressStats = {
+    imagesFound: candidates.length,
+    imagesReplaced: 0,
+    bytesSaved: 0,
+    jpegHandled: 0,
+    flateHandled: 0,
+    otherSkipped: 0,
+  }
+
+  for (let i = 0; i < candidates.length; i++) {
+    const { ref, stream } = candidates[i]
+    onProgress?.(i, candidates.length)
+    try {
+      const rep = await tryRecompressOneImage(stream, options, stats)
+      if (rep) {
+        const newDict = pdf.context.obj({
+          Type: 'XObject',
+          Subtype: 'Image',
+          Width: rep.width,
+          Height: rep.height,
+          ColorSpace: 'DeviceRGB',
+          BitsPerComponent: 8,
+          Filter: 'DCTDecode',
+          Length: rep.bytes.byteLength,
+        })
+        pdf.context.assign(ref, PDFRawStream.of(newDict, rep.bytes))
+        stats.imagesReplaced += 1
+        stats.bytesSaved += stream.contents.byteLength - rep.bytes.byteLength
+      }
+    } catch {
+      stats.otherSkipped += 1
+    }
+  }
+  onProgress?.(candidates.length, candidates.length)
+
+  const outBytes = await pdf.save({ useObjectStreams: true })
+  return { bytes: outBytes, stats }
+}
+
+async function tryRecompressOneImage(
+  stream: PDFRawStream,
+  options: RecompressOptions,
+  stats: ImageRecompressStats,
+): Promise<{ bytes: Uint8Array; width: number; height: number } | null> {
+  const dict = stream.dict
+  const filter = dict.get(PDFName.of('Filter'))
+  const isJpeg =
+    filter === PDFName.of('DCTDecode') ||
+    (filter instanceof PDFArray &&
+      filter.size() > 0 &&
+      filter.get(filter.size() - 1) === PDFName.of('DCTDecode'))
+  const isFlate =
+    filter === PDFName.of('FlateDecode') ||
+    (filter instanceof PDFArray &&
+      filter.size() > 0 &&
+      filter.get(filter.size() - 1) === PDFName.of('FlateDecode'))
+
+  let imageData: ImageData | null = null
+  if (isJpeg) {
+    stats.jpegHandled += 1
+    imageData = await decodeJpegStream(stream)
+  } else if (isFlate) {
+    stats.flateHandled += 1
+    imageData = await decodeFlateStream(stream)
+  } else {
+    stats.otherSkipped += 1
+    return null
+  }
+  if (!imageData) return null
+
+  let targetW = imageData.width
+  let targetH = imageData.height
+  if (
+    options.maxImagePx > 0 &&
+    (imageData.width > options.maxImagePx || imageData.height > options.maxImagePx)
+  ) {
+    const scale = Math.min(options.maxImagePx / imageData.width, options.maxImagePx / imageData.height)
+    targetW = Math.max(1, Math.round(imageData.width * scale))
+    targetH = Math.max(1, Math.round(imageData.height * scale))
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, targetW, targetH)
+  if (targetW === imageData.width && targetH === imageData.height) {
+    ctx.putImageData(imageData, 0, 0)
+  } else {
+    const src = document.createElement('canvas')
+    src.width = imageData.width
+    src.height = imageData.height
+    src.getContext('2d')!.putImageData(imageData, 0, 0)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(src, 0, 0, targetW, targetH)
+  }
+
+  const newBlob: Blob = await new Promise((resolve, reject) =>
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('toBlob failed'))),
+      'image/jpeg',
+      options.imageQuality,
+    ),
+  )
+  const newBytes = new Uint8Array(await newBlob.arrayBuffer())
+  if (newBytes.byteLength >= stream.contents.byteLength) return null
+  return { bytes: newBytes, width: targetW, height: targetH }
+}
+
+async function decodeJpegStream(stream: PDFRawStream): Promise<ImageData | null> {
+  const orig = stream.contents
+  const ab = new ArrayBuffer(orig.byteLength)
+  new Uint8Array(ab).set(orig)
+  const blob = new Blob([ab], { type: 'image/jpeg' })
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(blob)
+  } catch {
+    return null
+  }
+  const c = document.createElement('canvas')
+  c.width = bitmap.width
+  c.height = bitmap.height
+  const cx = c.getContext('2d')!
+  cx.drawImage(bitmap, 0, 0)
+  bitmap.close?.()
+  return cx.getImageData(0, 0, c.width, c.height)
+}
+
+async function decodeFlateStream(stream: PDFRawStream): Promise<ImageData | null> {
+  const d = stream.dict
+  const width = (d.get(PDFName.of('Width')) as PDFNumber | undefined)?.asNumber()
+  const height = (d.get(PDFName.of('Height')) as PDFNumber | undefined)?.asNumber()
+  if (!width || !height) return null
+  const bpc = (d.get(PDFName.of('BitsPerComponent')) as PDFNumber | undefined)?.asNumber() ?? 8
+  if (bpc !== 8) return null
+  const cs = d.get(PDFName.of('ColorSpace'))
+  let channels = 0
+  if (cs === PDFName.of('DeviceRGB')) channels = 3
+  else if (cs === PDFName.of('DeviceGray')) channels = 1
+  else return null
+
+  const comp = stream.contents
+  const compBuf = new ArrayBuffer(comp.byteLength)
+  new Uint8Array(compBuf).set(comp)
+  let decompressed: Uint8Array
+  try {
+    const buf = await new Response(
+      new Blob([compBuf]).stream().pipeThrough(new DecompressionStream('deflate')),
+    ).arrayBuffer()
+    decompressed = new Uint8Array(buf)
+  } catch {
+    return null
+  }
+
+  let predictor = 1
+  let columns = width
+  const dpRaw = d.get(PDFName.of('DecodeParms'))
+  if (dpRaw instanceof PDFDict) {
+    const p = dpRaw.get(PDFName.of('Predictor'))
+    if (p instanceof PDFNumber) predictor = p.asNumber()
+    const cols = dpRaw.get(PDFName.of('Columns'))
+    if (cols instanceof PDFNumber) columns = cols.asNumber()
+  }
+
+  let pixels: Uint8Array
+  if (predictor === 1) pixels = decompressed
+  else if (predictor >= 10 && predictor <= 15) {
+    pixels = reversePngPredictor(decompressed, columns, height, channels)
+    if (!pixels.length) return null
+  } else return null
+
+  const expected = width * height * channels
+  if (pixels.length < expected) return null
+  const id = new ImageData(width, height)
+  if (channels === 3) {
+    for (let p = 0, q = 0; q < id.data.length; p += 3, q += 4) {
+      id.data[q] = pixels[p]
+      id.data[q + 1] = pixels[p + 1]
+      id.data[q + 2] = pixels[p + 2]
+      id.data[q + 3] = 255
+    }
+  } else {
+    for (let p = 0, q = 0; q < id.data.length; p += 1, q += 4) {
+      id.data[q] = id.data[q + 1] = id.data[q + 2] = pixels[p]
+      id.data[q + 3] = 255
+    }
+  }
+  return id
+}
+
+function reversePngPredictor(raw: Uint8Array, width: number, height: number, channels: number): Uint8Array {
+  const rowBytes = width * channels
+  const out = new Uint8Array(height * rowBytes)
+  let prevRow = new Uint8Array(rowBytes)
+  let inPos = 0
+  for (let y = 0; y < height; y++) {
+    if (inPos >= raw.length) return new Uint8Array(0)
+    const filter = raw[inPos]
+    inPos += 1
+    const rowEnd = Math.min(inPos + rowBytes, raw.length)
+    const row = raw.subarray(inPos, rowEnd)
+    inPos = rowEnd
+    const outRow = out.subarray(y * rowBytes, (y + 1) * rowBytes)
+    for (let x = 0; x < rowBytes; x++) {
+      const left = x >= channels ? outRow[x - channels] : 0
+      const above = prevRow[x]
+      const upperLeft = x >= channels ? prevRow[x - channels] : 0
+      let val = row[x] ?? 0
+      switch (filter) {
+        case 0:
+          break
+        case 1:
+          val = (val + left) & 0xff
+          break
+        case 2:
+          val = (val + above) & 0xff
+          break
+        case 3:
+          val = (val + Math.floor((left + above) / 2)) & 0xff
+          break
+        case 4: {
+          const p = left + above - upperLeft
+          const pa = Math.abs(p - left)
+          const pb = Math.abs(p - above)
+          const pc = Math.abs(p - upperLeft)
+          const pred = pa <= pb && pa <= pc ? left : pb <= pc ? above : upperLeft
+          val = (val + pred) & 0xff
+          break
+        }
+        default:
+          break
+      }
+      outRow[x] = val
+    }
+    prevRow = outRow
+  }
+  return out
+}
+
+/* ---------- Phase 2: mupdf structural pass ---------- */
+
+async function runMupdfPass(
+  bytes: Uint8Array,
+  onProgress?: (status: string) => void,
+): Promise<Uint8Array> {
   onProgress?.('Loading PDF engine...')
   const mupdf = await getMupdf()
 
-  onProgress?.('Reading PDF...')
-  const buf = await file.arrayBuffer()
-  const data = new Uint8Array(buf)
-  const doc = mupdf.PDFDocument.openDocument(data, 'application/pdf') as InstanceType<
+  const doc = mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as InstanceType<
     typeof mupdf.PDFDocument
   >
-
-  let outBytes: Uint8Array
   try {
     onProgress?.('Subsetting fonts...')
     try {
       doc.subsetFonts()
     } catch {
-      // Subsetting may fail on some PDFs (encrypted streams, unusual font types).
+      // skip on failure
     }
-
-    onProgress?.('Optimizing & saving...')
-    // Most aggressive non-destructive options. "deduplicate" garbage is the
-    // strongest collection mode — it removes unused objects AND merges
-    // identical streams (e.g. duplicated images / form XObjects across pages).
+    onProgress?.('Optimizing structure...')
     const out = doc.saveToBuffer({
       compress: true,
       compressImages: true,
@@ -430,19 +704,54 @@ export async function compressPdf(
       linearize: false,
       continueOnError: true,
     })
-    outBytes = out.asUint8Array()
+    return out.asUint8Array()
   } finally {
     try {
       doc.destroy()
     } catch {
-      // ignore cleanup failures
+      // ignore
     }
   }
+}
 
+/* ---------- Main compress entry point ---------- */
+
+export async function compressPdf(
+  file: File,
+  onProgress?: (status: string) => void,
+): Promise<CompressResult> {
+  const originalSize = file.size
+
+  onProgress?.('Reading PDF...')
+  const buf = await file.arrayBuffer()
+
+  // Phase 1: recompress embedded images
+  const phase1 = await recompressEmbeddedImages(
+    new Uint8Array(buf),
+    { imageQuality: 0.65, maxImagePx: 1280 },
+    (c, t) => onProgress?.(`Recompressing image ${c} of ${t}...`),
+  )
+
+  // Phase 2: mupdf structural optimization on the recompressed bytes
+  let finalBytes: Uint8Array
+  try {
+    finalBytes = await runMupdfPass(phase1.bytes, onProgress)
+  } catch {
+    // mupdf phase failed — keep phase1 result as the final output
+    finalBytes = phase1.bytes
+  }
+
+  // Phase 3: structural breakdown of the result
   onProgress?.('Analyzing result...')
-  const breakdown = await analyzeStructure(outBytes)
+  const breakdown = await analyzeStructure(finalBytes)
 
-  return { bytes: outBytes, originalSize, outputSize: outBytes.byteLength, breakdown }
+  return {
+    bytes: finalBytes,
+    imageStats: phase1.stats,
+    originalSize,
+    outputSize: finalBytes.byteLength,
+    breakdown,
+  }
 }
 
 /* ---------- Force compression (rasterize all pages) ---------- */

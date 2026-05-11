@@ -9,6 +9,7 @@ import {
   compressPdf,
   forceCompressPdf,
   getPageCount,
+  type ImageRecompressStats,
   type StructureBreakdown,
 } from '../lib/pdfOps'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
@@ -28,6 +29,7 @@ interface CompressionState {
   oldSize: number
   mode: Mode
   breakdown?: StructureBreakdown
+  imageStats?: ImageRecompressStats
 }
 
 function BreakdownBar({ b }: { b: StructureBreakdown }) {
@@ -114,6 +116,7 @@ export function Compress() {
         oldSize: out.originalSize,
         mode: 'smart',
         breakdown: out.breakdown,
+        imageStats: out.imageStats,
       })
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Compression failed')
@@ -236,6 +239,38 @@ export function Compress() {
                 Download compressed PDF
               </button>
             </StatusPanel>
+
+            {result.imageStats && result.imageStats.imagesFound > 0 && (
+              <div className="card p-4 text-xs text-fg-muted space-y-1.5">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle mb-1">
+                  Image recompression
+                </div>
+                <div className="flex justify-between">
+                  <span>Embedded images found</span>
+                  <span className="font-mono text-fg">{result.imageStats.imagesFound}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Recompressed (JPEG / PNG)</span>
+                  <span className="font-mono text-fg">
+                    {result.imageStats.jpegHandled} / {result.imageStats.flateHandled}
+                  </span>
+                </div>
+                {result.imageStats.otherSkipped > 0 && (
+                  <div className="flex justify-between text-fg-subtle">
+                    <span>Skipped (unsupported format)</span>
+                    <span className="font-mono">{result.imageStats.otherSkipped}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>Replaced (smaller after recompress)</span>
+                  <span className="font-mono text-fg">{result.imageStats.imagesReplaced}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Bytes saved on images</span>
+                  <span className="font-mono text-fg">{formatBytes(result.imageStats.bytesSaved)}</span>
+                </div>
+              </div>
+            )}
 
             {result.breakdown && <BreakdownBar b={result.breakdown} />}
 
