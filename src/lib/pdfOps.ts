@@ -1,4 +1,12 @@
-import { PDFDocument, degrees, type PDFEmbeddedPage } from 'pdf-lib'
+import {
+  PDFDocument,
+  PDFArray,
+  PDFName,
+  PDFRawStream,
+  degrees,
+  type PDFEmbeddedPage,
+  type PDFRef,
+} from 'pdf-lib'
 import { pdfjsLib } from './pdfWorker'
 
 /* ---------- Loading helpers ---------- */
@@ -226,6 +234,159 @@ export interface CompressOptions {
   imageDpi: number // target DPI for embedded images
   imageQuality: number // 0..1 for jpeg
   grayscale: boolean
+}
+
+/* ---------- Smart (text-preserving) compression ---------- */
+
+export interface SmartCompressOptions {
+  imageQuality: number // 0.1..0.95 JPEG quality for embedded images
+  maxImagePx: number // 0 = no downsampling; otherwise cap the larger dimension
+  onlyShrink: boolean // skip replacement if the new image would be bigger
+}
+
+export interface SmartCompressResult {
+  bytes: Uint8Array
+  imagesFound: number
+  imagesReplaced: number
+  imagesSkipped: number
+  originalSize: number
+  outputSize: number
+}
+
+/**
+ * Compress only the embedded raster images in the PDF.
+ * Text, fonts, vectors, and overall structure are preserved.
+ *
+ * Works on JPEG-encoded image XObjects (`/DCTDecode`). Other compression
+ * formats (FlateDecode, CCITTFax, JBIG2) are skipped since decoding them
+ * generically in-browser would require reimplementing each filter.
+ *
+ * Result quality depends heavily on the input: an image-heavy PDF can shrink
+ * dramatically; a text-only PDF will barely change because there's nothing
+ * to compress in this mode.
+ */
+export async function compressPdfSmart(
+  file: File,
+  options: SmartCompressOptions,
+  onProgress?: (current: number, total: number) => void,
+): Promise<SmartCompressResult> {
+  const buf = await file.arrayBuffer()
+  const originalSize = buf.byteLength
+  const pdf = await PDFDocument.load(buf)
+
+  const candidates: { ref: PDFRef; stream: PDFRawStream }[] = []
+  for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream)) continue
+    const dict = obj.dict
+    const subtype = dict.get(PDFName.of('Subtype'))
+    if (subtype !== PDFName.of('Image')) continue
+    // Skip images with transparency masks (would lose alpha on JPEG re-encode)
+    if (dict.get(PDFName.of('SMask')) !== undefined) continue
+    if (dict.get(PDFName.of('Mask')) !== undefined) continue
+    // Skip grayscale to avoid bloating (we re-encode as 3-channel JPEG)
+    const colorSpace = dict.get(PDFName.of('ColorSpace'))
+    if (colorSpace === PDFName.of('DeviceGray')) continue
+    candidates.push({ ref, stream: obj })
+  }
+
+  const imagesFound = candidates.length
+  let imagesReplaced = 0
+  let imagesSkipped = 0
+
+  for (let i = 0; i < candidates.length; i++) {
+    const { ref, stream } = candidates[i]
+    try {
+      const replacement = await tryRecompressImage(stream, options)
+      if (replacement) {
+        const newDict = pdf.context.obj({
+          Type: 'XObject',
+          Subtype: 'Image',
+          Width: replacement.width,
+          Height: replacement.height,
+          ColorSpace: 'DeviceRGB',
+          BitsPerComponent: 8,
+          Filter: 'DCTDecode',
+          Length: replacement.bytes.byteLength,
+        })
+        const newStream = PDFRawStream.of(newDict, replacement.bytes)
+        pdf.context.assign(ref, newStream)
+        imagesReplaced += 1
+      } else {
+        imagesSkipped += 1
+      }
+    } catch {
+      imagesSkipped += 1
+    }
+    onProgress?.(i + 1, imagesFound)
+  }
+
+  const bytes = await pdf.save({ useObjectStreams: true })
+  return {
+    bytes,
+    imagesFound,
+    imagesReplaced,
+    imagesSkipped,
+    originalSize,
+    outputSize: bytes.byteLength,
+  }
+}
+
+async function tryRecompressImage(
+  stream: PDFRawStream,
+  options: SmartCompressOptions,
+): Promise<{ bytes: Uint8Array; width: number; height: number } | null> {
+  const dict = stream.dict
+  const filter = dict.get(PDFName.of('Filter'))
+  const isJpeg =
+    filter === PDFName.of('DCTDecode') ||
+    (filter instanceof PDFArray &&
+      filter.size() > 0 &&
+      filter.get(0) === PDFName.of('DCTDecode'))
+  if (!isJpeg) return null
+
+  // Decode the existing JPEG via browser (copy into a fresh ArrayBuffer to satisfy strict TS)
+  const orig = stream.contents
+  const origBuffer = new ArrayBuffer(orig.byteLength)
+  new Uint8Array(origBuffer).set(orig)
+  const blob = new Blob([origBuffer], { type: 'image/jpeg' })
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(blob)
+  } catch {
+    return null
+  }
+
+  let targetW = bitmap.width
+  let targetH = bitmap.height
+  if (options.maxImagePx > 0 && (bitmap.width > options.maxImagePx || bitmap.height > options.maxImagePx)) {
+    const scale = Math.min(options.maxImagePx / bitmap.width, options.maxImagePx / bitmap.height)
+    targetW = Math.max(1, Math.round(bitmap.width * scale))
+    targetH = Math.max(1, Math.round(bitmap.height * scale))
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, targetW, targetH)
+  ctx.drawImage(bitmap, 0, 0, targetW, targetH)
+  bitmap.close?.()
+
+  const newBlob: Blob = await new Promise((resolve, reject) =>
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('toBlob failed'))),
+      'image/jpeg',
+      options.imageQuality,
+    ),
+  )
+  const newBytes = new Uint8Array(await newBlob.arrayBuffer())
+
+  if (options.onlyShrink && newBytes.byteLength >= stream.contents.byteLength) {
+    return null
+  }
+
+  return { bytes: newBytes, width: targetW, height: targetH }
 }
 
 /**
