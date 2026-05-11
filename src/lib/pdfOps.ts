@@ -1,5 +1,8 @@
 import {
   PDFDocument,
+  PDFDict,
+  PDFName,
+  PDFRawStream,
   degrees,
   type PDFEmbeddedPage,
 } from 'pdf-lib'
@@ -241,16 +244,148 @@ export async function writeMetadata(file: File, m: PdfMetadata): Promise<Uint8Ar
  * a commercial license from Artifex is required for closed-source distribution.
  */
 
+export interface StructureBreakdown {
+  totalBytes: number
+  images: number
+  fonts: number
+  signatures: number // signature dictionaries and their contents
+  contentStreams: number
+  metadata: number
+  other: number
+  imageCount: number
+  fontCount: number
+  signatureCount: number
+}
+
 export interface CompressResult {
   bytes: Uint8Array
   originalSize: number
   outputSize: number
+  breakdown: StructureBreakdown
 }
 
 let mupdfPromise: Promise<typeof import('mupdf')> | null = null
 function getMupdf() {
   if (!mupdfPromise) mupdfPromise = import('mupdf')
   return mupdfPromise
+}
+
+/**
+ * Analyze the size distribution of indirect objects in a PDF, grouping by
+ * category so we can tell the user what's actually making their file big.
+ */
+async function analyzeStructure(bytes: Uint8Array): Promise<StructureBreakdown> {
+  const totalBytes = bytes.byteLength
+  const ab = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(ab).set(bytes)
+  let pdf: PDFDocument
+  try {
+    pdf = await PDFDocument.load(ab, { ignoreEncryption: true })
+  } catch {
+    return {
+      totalBytes,
+      images: 0,
+      fonts: 0,
+      signatures: 0,
+      contentStreams: 0,
+      metadata: 0,
+      other: totalBytes,
+      imageCount: 0,
+      fontCount: 0,
+      signatureCount: 0,
+    }
+  }
+
+  let images = 0
+  let fonts = 0
+  let signatures = 0
+  let contentStreams = 0
+  let metadata = 0
+  let categorized = 0
+  let imageCount = 0
+  let fontCount = 0
+  let signatureCount = 0
+
+  const signatureContentRefs = new Set<string>()
+  // First pass: find any /Contents on signature dicts so we know which stream
+  // bytes to attribute to signatures.
+  for (const [, obj] of pdf.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFDict)) continue
+    const type = obj.get(PDFName.of('Type'))
+    if (type === PDFName.of('Sig') || type === PDFName.of('DocTimeStamp')) {
+      signatureCount += 1
+      const contents = obj.get(PDFName.of('Contents'))
+      if (contents) signatureContentRefs.add(contents.toString())
+      // The Contents itself in a Sig dict is usually a hex string, not a stream
+      // but it dominates the dict's serialized size — count its length.
+      try {
+        const sigBytes = obj.toString().length
+        signatures += sigBytes
+        categorized += sigBytes
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  for (const [ref, obj] of pdf.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream)) continue
+    const size = obj.contents.byteLength
+    const dict = obj.dict
+    const subtype = dict.get(PDFName.of('Subtype'))
+    const type = dict.get(PDFName.of('Type'))
+
+    if (subtype === PDFName.of('Image')) {
+      images += size
+      imageCount += 1
+      categorized += size
+    } else if (
+      type === PDFName.of('Font') ||
+      type === PDFName.of('FontDescriptor') ||
+      subtype === PDFName.of('CIDFontType0C') ||
+      subtype === PDFName.of('CIDFontType2') ||
+      subtype === PDFName.of('Type1C') ||
+      subtype === PDFName.of('OpenType')
+    ) {
+      fonts += size
+      fontCount += 1
+      categorized += size
+    } else if (subtype === PDFName.of('XML') || type === PDFName.of('Metadata')) {
+      metadata += size
+      categorized += size
+    } else if (
+      type === PDFName.of('Sig') ||
+      signatureContentRefs.has(ref.toString())
+    ) {
+      signatures += size
+      categorized += size
+    } else if (subtype === undefined && type === undefined) {
+      // Likely a content stream
+      contentStreams += size
+      categorized += size
+    }
+  }
+
+  // Count CIDSystemInfo / Font dicts (non-stream) under fonts too
+  for (const [, obj] of pdf.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFDict)) continue
+    const type = obj.get(PDFName.of('Type'))
+    if (type === PDFName.of('Font')) fontCount += 1
+  }
+
+  const other = Math.max(0, totalBytes - categorized)
+  return {
+    totalBytes,
+    images,
+    fonts,
+    signatures,
+    contentStreams,
+    metadata,
+    other,
+    imageCount,
+    fontCount,
+    signatureCount,
+  }
 }
 
 export async function compressPdf(
@@ -269,21 +404,24 @@ export async function compressPdf(
     typeof mupdf.PDFDocument
   >
 
+  let outBytes: Uint8Array
   try {
     onProgress?.('Subsetting fonts...')
     try {
       doc.subsetFonts()
     } catch {
       // Subsetting may fail on some PDFs (encrypted streams, unusual font types).
-      // Carry on with the rest of the optimizations.
     }
 
-    onProgress?.('Compressing & saving...')
+    onProgress?.('Optimizing & saving...')
+    // Most aggressive non-destructive options. "deduplicate" garbage is the
+    // strongest collection mode — it removes unused objects AND merges
+    // identical streams (e.g. duplicated images / form XObjects across pages).
     const out = doc.saveToBuffer({
       compress: true,
       compressImages: true,
       compressFonts: true,
-      garbage: 'compact',
+      garbage: 'deduplicate',
       cleanContentStreams: true,
       sanitize: true,
       pretty: false,
@@ -292,9 +430,7 @@ export async function compressPdf(
       linearize: false,
       continueOnError: true,
     })
-
-    const bytes = out.asUint8Array()
-    return { bytes, originalSize, outputSize: bytes.byteLength }
+    outBytes = out.asUint8Array()
   } finally {
     try {
       doc.destroy()
@@ -302,7 +438,78 @@ export async function compressPdf(
       // ignore cleanup failures
     }
   }
+
+  onProgress?.('Analyzing result...')
+  const breakdown = await analyzeStructure(outBytes)
+
+  return { bytes: outBytes, originalSize, outputSize: outBytes.byteLength, breakdown }
 }
+
+/* ---------- Force compression (rasterize all pages) ---------- */
+
+export interface ForceCompressOptions {
+  dpi: number
+  imageQuality: number
+}
+
+export interface ForceCompressResult {
+  bytes: Uint8Array
+  originalSize: number
+  outputSize: number
+  pages: number
+}
+
+/**
+ * Last-resort compression: render every page as JPEG and reassemble.
+ * Text becomes raster (no longer selectable). Used when mupdf's
+ * structure-preserving compression can't shrink the file because the
+ * bulk is something like embedded signatures or already-optimized fonts.
+ */
+export async function forceCompressPdf(
+  file: File,
+  options: ForceCompressOptions,
+  onProgress?: (current: number, total: number, status: string) => void,
+): Promise<ForceCompressResult> {
+  const originalSize = file.size
+  const srcPdfJs = await loadPdfJs(file)
+  const outPdf = await PDFDocument.create()
+  const totalPages = srcPdfJs.numPages
+
+  for (let i = 1; i <= totalPages; i++) {
+    onProgress?.(i - 1, totalPages, `Rasterizing page ${i} of ${totalPages}...`)
+    const page = await srcPdfJs.getPage(i)
+    const scale = options.dpi / 72
+    const viewport = page.getViewport({ scale })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.ceil(viewport.width)
+    canvas.height = Math.ceil(viewport.height)
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    await page.render({ canvasContext: ctx, viewport }).promise
+
+    const blob: Blob = await new Promise((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('toBlob failed'))),
+        'image/jpeg',
+        options.imageQuality,
+      ),
+    )
+    const blobArr = new Uint8Array(await blob.arrayBuffer())
+    const jpgBuf = new ArrayBuffer(blobArr.byteLength)
+    new Uint8Array(jpgBuf).set(blobArr)
+    const jpg = await outPdf.embedJpg(jpgBuf)
+    const newPage = outPdf.addPage([canvas.width, canvas.height])
+    newPage.drawImage(jpg, { x: 0, y: 0, width: canvas.width, height: canvas.height })
+
+    page.cleanup()
+    onProgress?.(i, totalPages, `Rasterized page ${i} of ${totalPages}`)
+  }
+
+  const bytes = await outPdf.save({ useObjectStreams: true })
+  return { bytes, originalSize, outputSize: bytes.byteLength, pages: totalPages }
+}
+
 
 /* ---------- Page count ---------- */
 
