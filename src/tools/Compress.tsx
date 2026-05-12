@@ -5,12 +5,15 @@ import { FileDrop } from '../components/shared/FileDrop'
 import { FilePill } from '../components/shared/FilePill'
 import { ProgressBar } from '../components/ProgressBar'
 import { StatusPanel } from '../components/shared/StatusPanel'
+import { Segmented } from '../components/shared/OptionGroup'
 import { BreakdownBar } from './compress/BreakdownBar'
 import { ImageStatsCard } from './compress/ImageStatsCard'
 import { LimitReachedCard } from './compress/LimitReachedCard'
 import {
   compressPdf,
+  DEFAULT_COMPRESSION_LEVEL,
   forceCompressPdf,
+  type CompressionLevel,
   type ImageRecompressStats,
   type StructureBreakdown,
 } from '../lib/compress'
@@ -50,6 +53,7 @@ type Progress = SpinnerProgress | BarProgress
 export function Compress() {
   const [file, setFile] = useState<File | null>(null)
   const [pageCount, setPageCount] = useState<number | null>(null)
+  const [level, setLevel] = useState<CompressionLevel>(DEFAULT_COMPRESSION_LEVEL)
   const [progress, setProgress] = useState<Progress | null>(null)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<CompressionState | null>(null)
@@ -76,7 +80,9 @@ export function Compress() {
     setRunning(true)
     setResult(null)
     try {
-      const out = await compressPdf(file, (status) => setProgress({ kind: 'spinner', status }))
+      const out = await compressPdf(file, level, (status) =>
+        setProgress({ kind: 'spinner', status }),
+      )
       setResult({
         blob: bytesToBlob(out.bytes, 'application/pdf'),
         outputSize: out.outputSize,
@@ -147,6 +153,8 @@ export function Compress() {
           onRemove={reset}
         />
 
+        <LevelSelector value={level} onChange={setLevel} disabled={running} />
+
         {!result && !running && (
           <ReadyPanel inputSize={file.size} pageCount={pageCount} />
         )}
@@ -181,6 +189,38 @@ function ReadyPanel({ inputSize, pageCount }: { inputSize: number; pageCount: nu
         downloads the first time you compress and is cached afterward.
       </div>
     </StatusPanel>
+  )
+}
+
+const LEVEL_HINTS: Record<CompressionLevel, string> = {
+  'higher-quality': 'Near-original quality. Smaller savings, best for printable docs.',
+  recommended: 'Balanced. Keeps small text crisp while still shrinking meaningfully.',
+  'smaller-size': 'Aggressive. Smallest output. Fine for screen viewing or email.',
+}
+
+function LevelSelector({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: CompressionLevel
+  onChange: (v: CompressionLevel) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="space-y-2">
+      <Segmented
+        value={value}
+        options={[
+          { value: 'higher-quality', label: 'Higher quality' },
+          { value: 'recommended', label: 'Recommended' },
+          { value: 'smaller-size', label: 'Smaller size' },
+        ]}
+        onChange={onChange}
+        disabled={disabled}
+      />
+      <p className="text-[11px] text-fg-subtle leading-relaxed px-1">{LEVEL_HINTS[value]}</p>
+    </div>
   )
 }
 

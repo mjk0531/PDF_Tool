@@ -34,10 +34,24 @@ import { loadPdfJs } from './pdfOps'
 
 /* ---------- Tunables ---------- */
 
-const SMART_DEFAULTS = {
-  imageQuality: 0.65, // JPEG quality for re-encoded images
-  maxImagePx: 1280, // cap on largest image dimension; 0 = no cap
-} as const
+export type CompressionLevel = 'higher-quality' | 'recommended' | 'smaller-size'
+
+export const DEFAULT_COMPRESSION_LEVEL: CompressionLevel = 'recommended'
+
+/**
+ * Per-level recompression settings. Matches the "Higher quality / Recommended
+ * / Smaller size" tiers commercial PDF tools (SmallPDF, iLovePDF) expose.
+ *
+ * Tuned so 'recommended' keeps small text in scanned documents readable while
+ * still cutting size meaningfully; 'higher-quality' is near-original; and
+ * 'smaller-size' is the aggressive setting (best for image-heavy PDFs you
+ * just need to email).
+ */
+const LEVEL_PRESETS: Record<CompressionLevel, { imageQuality: number; maxImagePx: number }> = {
+  'higher-quality': { imageQuality: 0.88, maxImagePx: 2400 },
+  recommended: { imageQuality: 0.8, maxImagePx: 2000 },
+  'smaller-size': { imageQuality: 0.65, maxImagePx: 1280 },
+}
 
 const FORCE_DEFAULTS: ForceCompressOptions = {
   dpi: 120,
@@ -101,7 +115,11 @@ const getMupdf = () => (mupdfPromise ??= import('mupdf'))
 
 /* ---------- Public API ---------- */
 
-export async function compressPdf(file: File, onProgress?: ProgressFn): Promise<CompressResult> {
+export async function compressPdf(
+  file: File,
+  level: CompressionLevel = DEFAULT_COMPRESSION_LEVEL,
+  onProgress?: ProgressFn,
+): Promise<CompressResult> {
   const originalSize = file.size
 
   onProgress?.('Reading PDF...')
@@ -109,7 +127,7 @@ export async function compressPdf(file: File, onProgress?: ProgressFn): Promise<
 
   const phase1 = await recompressEmbeddedImages(
     inputBytes,
-    SMART_DEFAULTS,
+    LEVEL_PRESETS[level],
     (current, total) => onProgress?.(`Recompressing image ${current} of ${total}...`),
   )
 
