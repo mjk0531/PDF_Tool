@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Download, Loader2, Save, Trash2 } from 'lucide-react'
+import { Download, Loader2, Save, ScanText, Trash2 } from 'lucide-react'
 import { ToolHeader } from '../components/shared/ToolHeader'
 import { FileDrop } from '../components/shared/FileDrop'
 import { FilePill } from '../components/shared/FilePill'
@@ -12,6 +12,9 @@ import {
   type Annotation,
   type TextAnnotation,
 } from '../lib/editor'
+import { preloadEditorFont } from '../lib/editorFonts'
+import { ocrPageToEditableItems } from '../lib/editorOcr'
+import 'pretendard/dist/web/static/Pretendard-Regular.css'
 import { loadPdfJs } from '../lib/pdfOps'
 import { bytesToBlob, downloadBlob, formatBytes } from '../lib/download'
 import { stripExtension } from '../lib/converter'
@@ -33,6 +36,13 @@ export function Edit() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [warnings, setWarnings] = useState<string[]>([])
+  const [ocrRunning, setOcrRunning] = useState<{ page: number; status: string } | null>(null)
+
+  // Pre-warm the editor font (Pretendard) so the first save doesn't pause
+  // for a 1.6 MB fetch — runs once when the tool mounts.
+  useEffect(() => {
+    preloadEditorFont()
+  }, [])
 
   /* ----- Load PDF + render each page + extract text positions ----- */
 
@@ -156,6 +166,9 @@ export function Edit() {
           kind: 'text',
           x: item.x,
           y: item.y,
+          // Generous default width — text fits without wrapping for the
+          // original line, but the user can drag the handle to wrap.
+          width: Math.max(item.width * 2, 200),
           text: item.text,
           fontSize: item.fontSize,
           color: textStyle.color,
@@ -163,6 +176,30 @@ export function Edit() {
       ])
     },
     [textStyle.color],
+  )
+
+  /* ----- OCR a page to make it editable ----- */
+
+  const runOcrForPage = useCallback(
+    async (pageNumber: number) => {
+      if (!file) return
+      setOcrRunning({ page: pageNumber, status: 'Starting...' })
+      try {
+        const result = await ocrPageToEditableItems(file, pageNumber, 'eng+kor', (status) =>
+          setOcrRunning({ page: pageNumber, status }),
+        )
+        setExistingText((prev) => {
+          const next = new Map(prev)
+          next.set(pageNumber, result.items)
+          return next
+        })
+      } catch (e) {
+        alert(e instanceof Error ? e.message : 'OCR failed')
+      } finally {
+        setOcrRunning(null)
+      }
+    },
+    [file],
   )
 
   /* ----- Image picker ----- */
@@ -252,9 +289,9 @@ export function Edit() {
             pendingImagePresent={!!pendingImage}
           />
           <div className="card p-3 text-[11px] text-fg-subtle leading-relaxed">
-            <strong className="text-fg">Heads up:</strong> overlay text renders in Helvetica.
-            Non-Latin characters (Korean, Chinese, …) won't render in saved PDFs in this build —
-            Phase 2 will bundle a CJK font.
+            Overlay text uses <strong className="text-fg">Pretendard</strong> (Korean + Latin + partial CJK). Lines wrap to the
+            text box width — drag the right handle to set it. For scanned PDFs with no
+            selectable text, use the OCR button below each page.
           </div>
         </aside>
 
@@ -263,23 +300,50 @@ export function Edit() {
             <LoadingState />
           ) : (
             <div className="space-y-6 max-w-full">
-              {pages.map((p) => (
-                <PageView
-                  key={p.number}
-                  pageInfo={p}
-                  displayScale={DISPLAY_SCALE}
-                  existingText={existingText.get(p.number) ?? []}
-                  annotations={annotations}
-                  tool={tool}
-                  textStyle={textStyle}
-                  pendingImageDataUrl={pendingImage}
-                  onAddAnnotation={addAnnotation}
-                  onUpdateAnnotation={updateAnnotation}
-                  onDeleteAnnotation={deleteAnnotation}
-                  onEditExistingText={(item) => editExistingText(item, p.number)}
-                  onImagePlaced={() => setPendingImage(null)}
-                />
-              ))}
+              {pages.map((p) => {
+                const items = existingText.get(p.number) ?? []
+                const isOcrTarget = items.length === 0
+                const isOcrThisPage = ocrRunning?.page === p.number
+                return (
+                  <div key={p.number} className="space-y-2">
+                    <PageView
+                      pageInfo={p}
+                      displayScale={DISPLAY_SCALE}
+                      existingText={items}
+                      annotations={annotations}
+                      tool={tool}
+                      textStyle={textStyle}
+                      pendingImageDataUrl={pendingImage}
+                      onAddAnnotation={addAnnotation}
+                      onUpdateAnnotation={updateAnnotation}
+                      onDeleteAnnotation={deleteAnnotation}
+                      onEditExistingText={(item) => editExistingText(item, p.number)}
+                      onImagePlaced={() => setPendingImage(null)}
+                    />
+                    {isOcrTarget && (
+                      <div className="flex items-center justify-center">
+                        <button
+                          onClick={() => runOcrForPage(p.number)}
+                          disabled={!!ocrRunning}
+                          className="btn-secondary text-xs"
+                        >
+                          {isOcrThisPage ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              {ocrRunning?.status}
+                            </>
+                          ) : (
+                            <>
+                              <ScanText className="w-3.5 h-3.5" />
+                              Make page {p.number} editable with OCR
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 

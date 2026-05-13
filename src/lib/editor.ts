@@ -1,18 +1,24 @@
 /**
- * PDF editor — overlay model and export pipeline.
+ * PDF editor — annotation model and export pipeline.
  *
  * Annotations are described in PDF user space (origin bottom-left, points).
  * The editor UI converts mouse coordinates (display space, top-left origin)
  * to PDF space using the page's display scale.
  *
- * "Edit existing text" is the standard online-tool trick: whiteout the
+ * "Edit existing text" uses the standard online-tool trick: whiteout the
  * original glyphs by drawing a white rectangle on top of them, then draw the
  * new text on top of that. The original text data still exists in the PDF
- * but is visually covered. Same approach SmallPDF / iLovePDF use.
+ * but is visually covered.
+ *
+ * Text rendering uses Pretendard (Korean + Latin + partial CJK) as the
+ * universal font, with Helvetica as a fallback for the rare codepoints
+ * Pretendard doesn't cover. Multi-line text is word-wrapped to the
+ * annotation's width.
  */
 
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import type { PDFFont, PDFImage } from 'pdf-lib'
+import { PDFDocument, rgb } from 'pdf-lib'
+import type { PDFImage } from 'pdf-lib'
+import { embedEditorFonts, segmentTextByFont, wrapTextToWidth, type EditorFontSet } from './editorFonts'
 
 /* ---------- Annotation types ---------- */
 
@@ -25,11 +31,12 @@ export interface BaseAnnotation {
 
 export interface TextAnnotation extends BaseAnnotation {
   kind: 'text'
-  x: number // PDF points, from left
-  y: number // PDF points, from bottom (baseline of the text)
+  x: number // PDF points, left edge of the first line
+  y: number // PDF points, baseline of the first line
+  width: number // points; lines wrap to this width
   text: string
-  fontSize: number // points
-  color: string // hex like "#000000"
+  fontSize: number
+  color: string // hex "#rrggbb"
 }
 
 export interface ImageAnnotation extends BaseAnnotation {
@@ -38,7 +45,7 @@ export interface ImageAnnotation extends BaseAnnotation {
   y: number
   width: number
   height: number
-  dataUrl: string // 'data:image/png;base64,...' or 'data:image/jpeg;base64,...'
+  dataUrl: string
 }
 
 export interface WhiteoutAnnotation extends BaseAnnotation {
@@ -57,26 +64,13 @@ export function genId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
 }
 
-/** Hex color "#rrggbb" → pdf-lib rgb(0..1, 0..1, 0..1). */
 function hexToRgb(hex: string) {
   const clean = hex.replace('#', '')
-  const n = parseInt(clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean, 16)
+  const n = parseInt(
+    clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean,
+    16,
+  )
   return rgb(((n >> 16) & 0xff) / 255, ((n >> 8) & 0xff) / 255, (n & 0xff) / 255)
-}
-
-/**
- * Check whether Helvetica (WinAnsi encoded) can render a string.
- * pdf-lib will throw on unsupported codepoints, so we pre-flight every text
- * annotation and report unrenderable items back to the UI.
- */
-export function isHelveticaSafe(text: string): boolean {
-  // WinAnsi covers Latin-1 + a handful of extras. Everything outside the
-  // basic Latin + Latin-1 supplement range is risky.
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i)
-    if (c > 0x017f) return false // beyond Latin Extended-A
-  }
-  return true
 }
 
 /* ---------- Export pipeline ---------- */
@@ -93,10 +87,12 @@ export async function exportEditedPdf(
   const warnings: string[] = []
   const buf = await source.arrayBuffer()
   const pdf = await PDFDocument.load(buf, { ignoreEncryption: true })
-  const helvetica = await pdf.embedFont(StandardFonts.Helvetica)
-  const pages = pdf.getPages()
 
-  // Group annotations by page so we apply each page's edits in one pass.
+  // Load fonts only if there's at least one text annotation
+  const needsFonts = annotations.some((a) => a.kind === 'text')
+  const fonts = needsFonts ? await embedEditorFonts(pdf) : null
+
+  const pages = pdf.getPages()
   const byPage = new Map<number, Annotation[]>()
   for (const ann of annotations) {
     const arr = byPage.get(ann.page) ?? []
@@ -104,14 +100,13 @@ export async function exportEditedPdf(
     byPage.set(ann.page, arr)
   }
 
-  // Image data URL → embedded image cache (one embed per unique source).
+  // One PDFImage embed per unique data URL (same image across pages reused)
   const imageCache = new Map<string, PDFImage>()
 
   for (const [pageNumber, anns] of byPage) {
     const page = pages[pageNumber - 1]
     if (!page) continue
-    // Whiteouts first (so they sit under any overlay text/images),
-    // then images, then text on top.
+    // z-order: whiteouts first (under), then images, then text (top)
     const ordered: Annotation[] = [
       ...anns.filter((a) => a.kind === 'whiteout'),
       ...anns.filter((a) => a.kind === 'image'),
@@ -119,7 +114,7 @@ export async function exportEditedPdf(
     ]
     for (const ann of ordered) {
       try {
-        await applyAnnotation(pdf, page, ann, helvetica, imageCache, warnings)
+        await applyAnnotation(pdf, page, ann, fonts, imageCache, warnings)
       } catch (e) {
         warnings.push(`Failed to render annotation: ${(e as Error).message}`)
       }
@@ -133,7 +128,7 @@ async function applyAnnotation(
   pdf: PDFDocument,
   page: ReturnType<PDFDocument['getPages']>[number],
   ann: Annotation,
-  helvetica: PDFFont,
+  fonts: EditorFontSet | null,
   imageCache: Map<string, PDFImage>,
   warnings: string[],
 ): Promise<void> {
@@ -167,21 +162,49 @@ async function applyAnnotation(
     return
   }
 
-  // Text
-  if (!isHelveticaSafe(ann.text)) {
-    warnings.push(
-      `Skipped text "${ann.text.slice(0, 24)}…": Helvetica can't encode it. ` +
-        `Phase 2 will add a font with broader script coverage.`,
-    )
-    return
+  if (!fonts) return
+  drawText(page, ann, fonts, warnings)
+}
+
+/**
+ * Draw a text annotation: word-wrap to its width, then for each line, draw
+ * each font-coherent run side-by-side along the baseline.
+ */
+function drawText(
+  page: ReturnType<PDFDocument['getPages']>[number],
+  ann: TextAnnotation,
+  fonts: EditorFontSet,
+  warnings: string[],
+): void {
+  const color = hexToRgb(ann.color)
+  const lineHeight = ann.fontSize * 1.2
+  const lines = wrapTextToWidth(ann.text, fonts, ann.fontSize, Math.max(20, ann.width))
+
+  // Each subsequent line shifts down by lineHeight
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const runs = lines[lineIdx]
+    let cursorX = ann.x
+    const baselineY = ann.y - lineIdx * lineHeight
+    for (const run of runs) {
+      try {
+        page.drawText(run.text, {
+          x: cursorX,
+          y: baselineY,
+          size: ann.fontSize,
+          font: run.font,
+          color,
+        })
+        cursorX += run.font.widthOfTextAtSize(run.text, ann.fontSize)
+      } catch (e) {
+        // pdf-lib threw — codepoint not encodable by this run's font.
+        // Skip the offending run but continue with the rest of the line.
+        warnings.push(
+          `Skipped a segment in "${run.text.slice(0, 12)}…": ${(e as Error).message}`,
+        )
+      }
+    }
+    void segmentTextByFont
   }
-  page.drawText(ann.text, {
-    x: ann.x,
-    y: ann.y,
-    size: ann.fontSize,
-    font: helvetica,
-    color: hexToRgb(ann.color),
-  })
 }
 
 function dataUrlToBytes(dataUrl: string): Uint8Array {

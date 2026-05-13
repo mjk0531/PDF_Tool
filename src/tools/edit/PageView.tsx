@@ -127,6 +127,7 @@ export function PageView({
         kind: 'text',
         x: pt.x,
         y: pt.y,
+        width: 200, // default; user can drag the bottom-right corner to resize
         text: 'Type here',
         fontSize: textStyle.fontSize,
         color: textStyle.color,
@@ -284,6 +285,7 @@ export function PageView({
                 scale={displayScale}
                 pageHeightPts={pageInfo.height}
                 onChange={(text) => onUpdateAnnotation(ann.id, { text })}
+                onResizeWidth={(width) => onUpdateAnnotation(ann.id, { width })}
                 onDelete={() => onDeleteAnnotation(ann.id)}
               />
             ) : ann.kind === 'image' ? (
@@ -326,31 +328,55 @@ function TextAnnotationView({
   scale,
   pageHeightPts,
   onChange,
+  onResizeWidth,
   onDelete,
 }: {
   ann: TextAnnotation
   scale: number
   pageHeightPts: number
   onChange: (text: string) => void
+  onResizeWidth: (width: number) => void
   onDelete: () => void
 }) {
   const css = textBaselineToCss(ann, scale, pageHeightPts)
+  const widthPx = ann.width * scale
+  const [resizing, setResizing] = useState<{
+    startX: number
+    startWidth: number
+  } | null>(null)
+
+  useEffect(() => {
+    if (!resizing) return
+    const onMove = (e: MouseEvent) => {
+      const dx = (e.clientX - resizing.startX) / scale
+      onResizeWidth(Math.max(20, resizing.startWidth + dx))
+    }
+    const onUp = () => setResizing(null)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resizing, scale])
+
   return (
     <div
       onClick={(e) => e.stopPropagation()}
       className="absolute group"
-      style={{ left: css.left, top: css.top }}
+      style={{ left: css.left, top: css.top, width: widthPx }}
     >
-      <input
-        type="text"
+      <textarea
         value={ann.text}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-transparent outline-none border border-transparent group-hover:border-accent/50 focus:border-accent px-0.5"
+        rows={Math.max(1, ann.text.split('\n').length)}
+        className="bg-transparent outline-none border border-transparent group-hover:border-accent/50 focus:border-accent px-0.5 resize-none w-full overflow-hidden"
         style={{
           fontSize: css.fontSize,
           color: ann.color,
-          fontFamily: 'Helvetica, Arial, sans-serif',
-          lineHeight: 1,
+          fontFamily: '"Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          lineHeight: 1.2,
         }}
       />
       <button
@@ -360,6 +386,15 @@ function TextAnnotationView({
       >
         <Trash2 className="w-2.5 h-2.5" />
       </button>
+      <span
+        onMouseDown={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setResizing({ startX: e.clientX, startWidth: ann.width })
+        }}
+        className="absolute -right-1 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-accent rounded-sm cursor-ew-resize opacity-0 group-hover:opacity-100"
+        title="Drag to set wrap width"
+      />
     </div>
   )
 }
