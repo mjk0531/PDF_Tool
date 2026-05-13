@@ -16,9 +16,11 @@ import {
   Sheet,
   Presentation,
   ScanText,
+  PenLine,
 } from 'lucide-react'
 
 export type ToolId =
+  | 'edit'
   | 'pdf-to-image'
   | 'compress'
   | 'merge'
@@ -55,6 +57,15 @@ export const TOOLS: ToolMeta[] = [
     icon: FileImage,
     category: 'convert',
     quality: 'high',
+  },
+  {
+    id: 'edit',
+    name: 'Edit PDF',
+    shortName: 'Edit',
+    description: 'Add text, images, whiteout, and edit existing text',
+    icon: PenLine,
+    category: 'organize',
+    quality: 'best-effort',
   },
   {
     id: 'compress',

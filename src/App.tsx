@@ -5,6 +5,7 @@ import { Landing } from './components/Landing'
 import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
 import type { ToolId } from './tools/registry'
 
+import { Edit } from './tools/Edit'
 import { PdfToImage } from './tools/PdfToImage'
 import { Compress } from './tools/Compress'
 import { Merge } from './tools/Merge'
@@ -23,6 +24,7 @@ import { PdfToPpt } from './tools/PdfToPpt'
 import { Ocr } from './tools/Ocr'
 
 const TOOL_COMPONENTS: Record<ToolId, React.ComponentType> = {
+  edit: Edit,
   'pdf-to-image': PdfToImage,
   compress: Compress,
   merge: Merge,
