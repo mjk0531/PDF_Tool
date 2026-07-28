@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Sparkles, ArrowUp, ArrowDown, X, Image as ImageIcon, Maximize2 } from 'lucide-react'
 import { ToolHeader } from '../components/shared/ToolHeader'
 import { FileDrop } from '../components/shared/FileDrop'
+import { DropOverlay } from '../components/shared/DropOverlay'
 import { OptionGroup, Segmented } from '../components/shared/OptionGroup'
 import { StatusPanel } from '../components/shared/StatusPanel'
 import { imagesToPdf, type ImageToPdfOptions } from '../lib/pdfOps'
@@ -158,10 +159,17 @@ export function ImageToPdf() {
           </OptionGroup>
         </aside>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <DropOverlay
+          onFiles={onFiles}
+          accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+          acceptLabel="images"
+          className="flex-1 min-h-0"
+        >
+          <div className="h-full overflow-y-auto p-6 space-y-4">
           <FileDrop
             onFiles={onFiles}
             compact
+            noDrag
             accept="image/jpeg,image/png,.jpg,.jpeg,.png"
             acceptLabel="more images"
           />
@@ -210,7 +218,8 @@ export function ImageToPdf() {
               </button>
             </StatusPanel>
           )}
-        </div>
+          </div>
+        </DropOverlay>
       </div>
     </div>
   )

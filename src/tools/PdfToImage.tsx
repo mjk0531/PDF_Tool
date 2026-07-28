@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { ToolHeader } from '../components/shared/ToolHeader'
 import { FileDrop } from '../components/shared/FileDrop'
+import { DropOverlay } from '../components/shared/DropOverlay'
 import { OptionGroup, Segmented } from '../components/shared/OptionGroup'
 import { FileList } from '../components/FileList'
 import { PreviewGrid } from '../components/PreviewGrid'
@@ -391,8 +392,13 @@ export function PdfToImage() {
         </aside>
 
         {/* File sidebar */}
-        <div className="w-80 shrink-0 border-r border-border overflow-y-auto p-4 space-y-4">
-          <FileDrop onFiles={handleFiles} compact />
+        <DropOverlay
+          onFiles={handleFiles}
+          acceptLabel="PDFs"
+          className="w-80 shrink-0 border-r border-border"
+        >
+          <div className="h-full overflow-y-auto p-4 space-y-4">
+          <FileDrop onFiles={handleFiles} compact noDrag />
           <FileList
             files={files}
             selectedId={selectedId}
@@ -409,7 +415,8 @@ export function PdfToImage() {
               Clear all
             </button>
           )}
-        </div>
+          </div>
+        </DropOverlay>
 
         {/* Main content */}
         <div className="flex-1 flex flex-col overflow-hidden">

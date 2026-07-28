@@ -9,6 +9,8 @@ interface Props {
   compact?: boolean
   description?: string
   filterFn?: (file: File) => boolean
+  /** Skip built-in drag handlers — use when nested inside a DropOverlay that owns dragging. */
+  noDrag?: boolean
 }
 
 export function FileDrop({
@@ -19,6 +21,7 @@ export function FileDrop({
   compact = false,
   description,
   filterFn,
+  noDrag = false,
 }: Props) {
   const [isDragging, setIsDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -83,15 +86,15 @@ export function FileDrop({
     return (
       <button
         onClick={() => inputRef.current?.click()}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        onDragEnter={noDrag ? undefined : handleDragEnter}
+        onDragLeave={noDrag ? undefined : handleDragLeave}
+        onDragOver={noDrag ? undefined : handleDragOver}
+        onDrop={noDrag ? undefined : handleDrop}
         className={`
           w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg
           border border-dashed transition-all duration-200
           ${
-            isDragging
+            isDragging && !noDrag
               ? 'border-accent bg-accent/5 text-accent'
               : 'border-border hover:border-border-strong text-fg-muted hover:text-fg hover:bg-bg-subtle'
           }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Sparkles, GripVertical, X, ArrowUp, ArrowDown } from 'lucide-react'
 import { ToolHeader } from '../components/shared/ToolHeader'
 import { FileDrop } from '../components/shared/FileDrop'
+import { DropOverlay } from '../components/shared/DropOverlay'
 import { StatusPanel } from '../components/shared/StatusPanel'
 import { mergePdfs, getPageCount } from '../lib/pdfOps'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
@@ -90,8 +91,9 @@ export function Merge() {
           </button>
         }
       />
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 max-w-4xl mx-auto w-full">
-        <FileDrop onFiles={addFiles} compact />
+      <DropOverlay onFiles={addFiles} acceptLabel="PDFs" className="flex-1 min-h-0">
+        <div className="h-full overflow-y-auto p-6 space-y-4 max-w-4xl mx-auto w-full">
+        <FileDrop onFiles={addFiles} compact noDrag />
 
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted mb-2 px-1">
@@ -158,7 +160,8 @@ export function Merge() {
             </button>
           </StatusPanel>
         )}
-      </div>
+        </div>
+      </DropOverlay>
     </div>
   )
 }
