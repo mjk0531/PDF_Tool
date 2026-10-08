@@ -8,11 +8,15 @@ import { ProgressBar } from '../components/ProgressBar'
 import { extractText, pagesToMarkdown } from '../lib/extract'
 import { downloadBlob, formatBytes } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'pdf-to-markdown')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import officeMessages from '../i18n/messages/office'
 
 export function PdfToMarkdown() {
+  const meta = useToolMeta('pdf-to-markdown')
+  const t = useMessages(officeMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState<{ c: number; t: number } | null>(null)
@@ -32,7 +36,7 @@ export function PdfToMarkdown() {
       const md = pagesToMarkdown(pages, stripExtension(file.name))
       setMarkdown(md)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Conversion failed')
+      alert(e instanceof Error ? e.message : t.conversionFailed)
     } finally {
       setRunning(false)
       setProgress(null)
@@ -59,7 +63,7 @@ export function PdfToMarkdown() {
         rightSlot={
           <button onClick={run} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Converting...' : 'Convert to Markdown'}
+            {running ? c.converting : t.markdown.convert}
           </button>
         }
       />
@@ -73,33 +77,33 @@ export function PdfToMarkdown() {
                 className="btn-secondary w-full"
               >
                 <Copy className="w-3.5 h-3.5" />
-                Copy markdown
+                {t.markdown.copy}
               </button>
               <button
                 onClick={() => downloadBlob(new Blob([markdown], { type: 'text/markdown' }), `${baseName}.md`)}
                 className="btn-primary w-full"
               >
-                Download .md
+                {t.downloadExt('.md')}
               </button>
             </div>
           )}
           <p className="text-[11px] text-fg-subtle leading-relaxed">
-            Heading levels are inferred by font size. Plain prose is preserved.
+            {t.markdown.note}
           </p>
         </aside>
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {progress && <ProgressBar current={progress.c} total={progress.t} label="Extracting pages..." />}
+          {progress && <ProgressBar current={progress.c} total={progress.t} label={t.markdown.extracting} />}
           {markdown && (
             <>
               <StatusPanel
                 variant="success"
-                title="Markdown generated"
-                message={`${formatBytes(new Blob([markdown]).size)} · ${markdown.split('\n').length} lines`}
+                title={t.markdown.done}
+                message={`${formatBytes(new Blob([markdown]).size)} · ${t.markdown.lines(markdown.split('\n').length)}`}
               />
               <div className="card p-4">
                 <pre className="text-xs whitespace-pre-wrap font-mono text-fg-muted max-h-[60vh] overflow-y-auto">
                   {markdown.slice(0, 20000)}
-                  {markdown.length > 20000 && '\n\n... (truncated in preview)'}
+                  {markdown.length > 20000 && `\n\n${t.markdown.truncated}`}
                 </pre>
               </div>
             </>

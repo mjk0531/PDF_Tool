@@ -9,11 +9,15 @@ import { getPageCount, rotatePages } from '../lib/pdfOps'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
 import { stripExtension } from '../lib/converter'
 import { parsePageRange } from '../lib/pageRange'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'rotate')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import rotateMessages from '../i18n/messages/rotate'
 
 export function Rotate() {
+  const meta = useToolMeta('rotate')
+  const t = useMessages(rotateMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
   const [pageCount, setPageCount] = useState<number | null>(null)
   const [angle, setAngle] = useState<90 | 180 | 270>(90)
@@ -41,7 +45,7 @@ export function Rotate() {
       if (pagesText.trim() && pageCount) {
         const parsed = parsePageRange(pagesText, pageCount)
         if (!parsed) {
-          alert('Invalid page range')
+          alert(t.invalidRange)
           setRunning(false)
           return
         }
@@ -50,7 +54,7 @@ export function Rotate() {
       const bytes = await rotatePages(file, angle, pages)
       setResult(bytesToBlob(bytes, 'application/pdf'))
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Rotation failed')
+      alert(e instanceof Error ? e.message : t.failed)
     } finally {
       setRunning(false)
     }
@@ -74,7 +78,7 @@ export function Rotate() {
         rightSlot={
           <button onClick={run} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Rotating...' : 'Rotate'}
+            {running ? t.rotating : t.rotate}
           </button>
         }
       />
@@ -82,10 +86,10 @@ export function Rotate() {
         <aside className="w-80 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-6">
           <FilePill
             file={file}
-            detail={pageCount ? `${pageCount} pages` : undefined}
+            detail={pageCount ? c.pages(pageCount) : undefined}
             onRemove={() => { setFile(null); setResult(null) }}
           />
-          <OptionGroup icon={RotateCw} title="Angle">
+          <OptionGroup icon={RotateCw} title={t.angle}>
             <Segmented
               value={angle}
               options={[
@@ -97,13 +101,13 @@ export function Rotate() {
               disabled={running}
             />
           </OptionGroup>
-          <OptionGroup title="Pages" hint="Empty = all. e.g. 1-5, 7">
+          <OptionGroup title={t.pages} hint={t.pagesHint}>
             <input
               type="text"
               value={pagesText}
               onChange={(e) => setPagesText(e.target.value)}
               disabled={running}
-              placeholder="All pages"
+              placeholder={t.allPages}
               className="input w-full text-xs"
             />
           </OptionGroup>
@@ -113,14 +117,14 @@ export function Rotate() {
           {result && (
             <StatusPanel
               variant="success"
-              title="Rotated successfully"
-              message={`${formatBytes(result.size)} · pages rotated by ${angle}°`}
+              title={t.success}
+              message={`${formatBytes(result.size)} · ${t.rotatedBy(angle)}`}
             >
               <button
                 onClick={() => downloadBlob(result, `${stripExtension(file.name)}_rotated.pdf`)}
                 className="btn-primary"
               >
-                Download rotated PDF
+                {t.downloadRotated}
               </button>
             </StatusPanel>
           )}

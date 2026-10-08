@@ -8,11 +8,15 @@ import { ProgressBar } from '../components/ProgressBar'
 import { extractImages, type ExtractedImage } from '../lib/extract'
 import { downloadAsZip, downloadBlob, formatBytes } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'extract-images')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import extractImagesMessages from '../i18n/messages/extractImages'
 
 export function ExtractImages() {
+  const meta = useToolMeta('extract-images')
+  const t = useMessages(extractImagesMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
   const [progress, setProgress] = useState<{ c: number; t: number } | null>(null)
   const [running, setRunning] = useState(false)
@@ -32,7 +36,7 @@ export function ExtractImages() {
       const result = await extractImages(file, baseName, (c, t) => setProgress({ c, t }))
       setImages(result)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Extraction failed')
+      alert(e instanceof Error ? e.message : t.failed)
     } finally {
       setRunning(false)
       setProgress(null)
@@ -59,7 +63,7 @@ export function ExtractImages() {
         rightSlot={
           <button onClick={run} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Scanning...' : 'Extract images'}
+            {running ? t.scanning : t.extract}
           </button>
         }
       />
@@ -80,22 +84,22 @@ export function ExtractImages() {
               }}
               className="btn-primary w-full"
             >
-              Download all as ZIP
+              {t.downloadZip}
             </button>
           )}
         </aside>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {progress && <ProgressBar current={progress.c} total={progress.t} label="Scanning pages..." />}
+          {progress && <ProgressBar current={progress.c} total={progress.t} label={t.scanningPages} />}
           {images && images.length === 0 && (
-            <StatusPanel variant="info" title="No images found" message="This PDF has no embedded raster images." />
+            <StatusPanel variant="info" title={t.noImages} message={t.noImagesMessage} />
           )}
           {images && images.length > 0 && (
             <>
               <StatusPanel
                 variant="success"
-                title={`Found ${images.length} image${images.length === 1 ? '' : 's'}`}
-                message={`Total ${formatBytes(images.reduce((s, i) => s + i.blob.size, 0))}`}
+                title={t.found(images.length)}
+                message={t.total(formatBytes(images.reduce((s, i) => s + i.blob.size, 0)))}
               />
               <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
                 {images.map((img) => {
@@ -110,7 +114,7 @@ export function ExtractImages() {
                             className="btn-primary py-1.5 px-3 text-xs w-full"
                           >
                             <Download className="w-3.5 h-3.5" />
-                            Download
+                            {c.download}
                           </button>
                         </div>
                       </div>

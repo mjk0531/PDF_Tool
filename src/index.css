@@ -44,6 +44,12 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
+  /* Korean wraps between words (eojeol), not mid-word */
+  :lang(ko) {
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 10px;

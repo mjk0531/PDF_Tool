@@ -7,9 +7,10 @@ import { OptionGroup, Segmented } from '../components/shared/OptionGroup'
 import { StatusPanel } from '../components/shared/StatusPanel'
 import { imagesToPdf, type ImageToPdfOptions } from '../lib/pdfOps'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'image-to-pdf')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import imageToPdfMessages from '../i18n/messages/imageToPdf'
 
 interface Entry {
   id: string
@@ -18,6 +19,9 @@ interface Entry {
 }
 
 export function ImageToPdf() {
+  const meta = useToolMeta('image-to-pdf')
+  const t = useMessages(imageToPdfMessages)
+  const c = useMessages(commonMessages)
   const [entries, setEntries] = useState<Entry[]>([])
   const [opts, setOpts] = useState<ImageToPdfOptions>({
     pageSize: 'a4',
@@ -67,7 +71,7 @@ export function ImageToPdf() {
       )
       setResult(bytesToBlob(bytes, 'application/pdf'))
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Conversion failed')
+      alert(e instanceof Error ? e.message : t.errors.conversionFailed)
     } finally {
       setRunning(false)
     }
@@ -80,8 +84,8 @@ export function ImageToPdf() {
         <FileDrop
           onFiles={onFiles}
           accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-          acceptLabel="image files"
-          description="Drop JPG or PNG images. Order matches drop order."
+          kind="image"
+          description={t.dropDescription}
         />
       </div>
     )
@@ -96,20 +100,20 @@ export function ImageToPdf() {
         rightSlot={
           <button onClick={run} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Building...' : `Build PDF (${entries.length})`}
+            {running ? t.building : t.buildPdf(entries.length)}
           </button>
         }
       />
 
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-80 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-6">
-          <OptionGroup icon={ImageIcon} title="Page Size">
+          <OptionGroup icon={ImageIcon} title={t.options.pageSize}>
             <Segmented
               value={opts.pageSize}
               options={[
-                { value: 'a4', label: 'A4' },
-                { value: 'letter', label: 'Letter' },
-                { value: 'auto', label: 'Image size' },
+                { value: 'a4', label: t.options.pageSizes.a4 },
+                { value: 'letter', label: t.options.pageSizes.letter },
+                { value: 'auto', label: t.options.pageSizes.auto },
               ]}
               onChange={(v) => setOpts({ ...opts, pageSize: v as ImageToPdfOptions['pageSize'] })}
               disabled={running}
@@ -117,13 +121,13 @@ export function ImageToPdf() {
           </OptionGroup>
 
           {opts.pageSize !== 'auto' && (
-            <OptionGroup title="Orientation">
+            <OptionGroup title={t.options.orientation}>
               <Segmented
                 value={opts.orientation}
                 options={[
-                  { value: 'portrait', label: 'Portrait' },
-                  { value: 'landscape', label: 'Landscape' },
-                  { value: 'auto', label: 'Auto' },
+                  { value: 'portrait', label: t.options.orientations.portrait },
+                  { value: 'landscape', label: t.options.orientations.landscape },
+                  { value: 'auto', label: t.options.orientations.auto },
                 ]}
                 onChange={(v) =>
                   setOpts({ ...opts, orientation: v as ImageToPdfOptions['orientation'] })
@@ -133,20 +137,20 @@ export function ImageToPdf() {
             </OptionGroup>
           )}
 
-          <OptionGroup icon={Maximize2} title="Fit">
+          <OptionGroup icon={Maximize2} title={t.options.fit}>
             <Segmented
               value={opts.fit}
               options={[
-                { value: 'fit', label: 'Fit' },
-                { value: 'fill', label: 'Fill' },
-                { value: 'original', label: 'Original' },
+                { value: 'fit', label: t.options.fits.fit },
+                { value: 'fill', label: t.options.fits.fill },
+                { value: 'original', label: t.options.fits.original },
               ]}
               onChange={(v) => setOpts({ ...opts, fit: v as ImageToPdfOptions['fit'] })}
               disabled={running}
             />
           </OptionGroup>
 
-          <OptionGroup title="Margin (points)">
+          <OptionGroup title={t.options.margin}>
             <input
               type="number"
               min={0}
@@ -162,7 +166,7 @@ export function ImageToPdf() {
         <DropOverlay
           onFiles={onFiles}
           accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-          acceptLabel="images"
+          kind="image"
           className="flex-1 min-h-0"
         >
           <div className="h-full overflow-y-auto p-6 space-y-4">
@@ -171,7 +175,7 @@ export function ImageToPdf() {
             compact
             noDrag
             accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-            acceptLabel="more images"
+            kind="image"
           />
           <ul className="space-y-1.5">
             {entries.map((e, idx) => (
@@ -210,11 +214,11 @@ export function ImageToPdf() {
           {result && (
             <StatusPanel
               variant="success"
-              title="PDF created"
-              message={`${formatBytes(result.size)} · ${entries.length} pages`}
+              title={t.created}
+              message={`${formatBytes(result.size)} · ${c.pages(entries.length)}`}
             >
               <button onClick={() => downloadBlob(result, 'images.pdf')} className="btn-primary">
-                Download images.pdf
+                {t.downloadFile('images.pdf')}
               </button>
             </StatusPanel>
           )}

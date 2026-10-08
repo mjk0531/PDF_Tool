@@ -15,13 +15,17 @@ import {
 import { downloadBlob, downloadAsZip, formatBytes, bytesToBlob } from '../lib/download'
 import { stripExtension } from '../lib/converter'
 import { parsePageRange } from '../lib/pageRange'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'split')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import splitMessages from '../i18n/messages/split'
 
 type Mode = 'every' | 'ranges'
 
 export function Split() {
+  const meta = useToolMeta('split')
+  const t = useMessages(splitMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
   const [pageCount, setPageCount] = useState<number | null>(null)
   const [mode, setMode] = useState<Mode>('every')
@@ -47,7 +51,7 @@ export function Split() {
   const plannedGroups = useMemo<{ groups: SplitGroup[]; valid: boolean; reason?: string }>(() => {
     if (!file || !pageCount) return { groups: [], valid: false }
     if (mode === 'every') {
-      if (every < 1) return { groups: [], valid: false, reason: 'Pages per file must be ≥ 1' }
+      if (every < 1) return { groups: [], valid: false, reason: t.errors.pagesPerFileMin }
       return { groups: buildSplitGroupsByEvery(pageCount, every, baseName), valid: true }
     } else {
       const ranges = rangesText.split(';').map((s) => s.trim()).filter(Boolean)
@@ -55,13 +59,13 @@ export function Split() {
       for (let i = 0; i < ranges.length; i++) {
         const pages = parsePageRange(ranges[i], pageCount)
         if (!pages || pages.length === 0)
-          return { groups: [], valid: false, reason: `Invalid range: "${ranges[i]}"` }
+          return { groups: [], valid: false, reason: t.errors.invalidRange(ranges[i]) }
         groups.push({ name: `${baseName}_part_${i + 1}.pdf`, pages })
       }
-      if (groups.length === 0) return { groups: [], valid: false, reason: 'Add at least one range' }
+      if (groups.length === 0) return { groups: [], valid: false, reason: t.errors.noRanges }
       return { groups, valid: true }
     }
-  }, [file, pageCount, mode, every, rangesText, baseName])
+  }, [file, pageCount, mode, every, rangesText, baseName, t])
 
   const run = async () => {
     if (!file || !plannedGroups.valid) return
@@ -74,7 +78,7 @@ export function Split() {
       for (let i = 0; i < out.length; i++) setProgress({ c: i + 1, t: out.length })
       setResults(out)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Split failed')
+      alert(e instanceof Error ? e.message : t.errors.splitFailed)
     } finally {
       setRunning(false)
       setProgress(null)
@@ -99,7 +103,7 @@ export function Split() {
         rightSlot={
           <button onClick={run} disabled={!plannedGroups.valid || running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Splitting...' : 'Split'}
+            {running ? t.splitting : t.split}
           </button>
         }
       />
@@ -107,16 +111,16 @@ export function Split() {
         <aside className="w-80 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-6">
           <FilePill
             file={file}
-            detail={pageCount ? `${pageCount} pages` : undefined}
+            detail={pageCount ? c.pages(pageCount) : undefined}
             onRemove={() => { setFile(null); setResults([]) }}
           />
 
-          <OptionGroup icon={Scissors} title="Mode">
+          <OptionGroup icon={Scissors} title={t.options.mode}>
             <Segmented
               value={mode}
               options={[
-                { value: 'every', label: 'Every N pages' },
-                { value: 'ranges', label: 'Custom ranges' },
+                { value: 'every', label: t.options.modes.every },
+                { value: 'ranges', label: t.options.modes.ranges },
               ]}
               onChange={(v) => setMode(v as Mode)}
               disabled={running}
@@ -125,8 +129,8 @@ export function Split() {
 
           {mode === 'every' ? (
             <OptionGroup
-              title="Pages per file"
-              hint={pageCount ? `Will produce ${Math.ceil(pageCount / Math.max(1, every))} files` : undefined}
+              title={t.options.pagesPerFile}
+              hint={pageCount ? t.options.willProduce(Math.ceil(pageCount / Math.max(1, every))) : undefined}
             >
               <input
                 type="number"
@@ -140,8 +144,8 @@ export function Split() {
             </OptionGroup>
           ) : (
             <OptionGroup
-              title="Ranges (semicolon-separated)"
-              hint="Each range becomes one PDF. e.g. 1-3; 5; 7-10"
+              title={t.options.ranges}
+              hint={t.options.rangesHint}
             >
               <textarea
                 value={rangesText}
@@ -159,13 +163,13 @@ export function Split() {
         </aside>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {progress && <ProgressBar current={progress.c} total={progress.t} label="Splitting..." />}
+          {progress && <ProgressBar current={progress.c} total={progress.t} label={t.splitting} />}
 
           {plannedGroups.valid && plannedGroups.groups.length > 0 && results.length === 0 && (
             <StatusPanel
               variant="info"
-              title={`${plannedGroups.groups.length} output file${plannedGroups.groups.length === 1 ? '' : 's'} planned`}
-              message={plannedGroups.groups.map((g) => `${g.name} (${g.pages.length}p)`).join(' · ')}
+              title={t.planned(plannedGroups.groups.length)}
+              message={plannedGroups.groups.map((g) => `${g.name} (${t.pagesShort(g.pages.length)})`).join(' · ')}
             />
           )}
 
@@ -173,8 +177,8 @@ export function Split() {
             <div className="space-y-3">
               <StatusPanel
                 variant="success"
-                title={`Split into ${results.length} files`}
-                message={`Total ${formatBytes(results.reduce((s, r) => s + r.bytes.byteLength, 0))}`}
+                title={t.splitInto(results.length)}
+                message={t.totalSize(formatBytes(results.reduce((s, r) => s + r.bytes.byteLength, 0)))}
               >
                 <button
                   onClick={async () => {
@@ -189,7 +193,7 @@ export function Split() {
                   }}
                   className="btn-primary"
                 >
-                  Download all as ZIP
+                  {t.downloadZip}
                 </button>
               </StatusPanel>
               <ul className="space-y-1.5">
@@ -203,7 +207,7 @@ export function Split() {
                       className="btn-secondary text-xs"
                       onClick={() => downloadBlob(bytesToBlob(r.bytes, 'application/pdf'), r.name)}
                     >
-                      Download
+                      {c.download}
                     </button>
                   </li>
                 ))}

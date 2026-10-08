@@ -1,19 +1,16 @@
-import { CATEGORY_LABELS, TOOLS_BY_CATEGORY, type ToolId } from '../tools/registry'
+import { CATEGORY_ORDER, TOOLS_BY_CATEGORY, type ToolId } from '../tools/registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import toolMessages from '../i18n/messages/tools'
 
 interface Props {
   current: ToolId | null
   onSelect: (id: ToolId) => void
 }
 
-const CATEGORY_ORDER: (keyof typeof CATEGORY_LABELS)[] = [
-  'organize',
-  'convert',
-  'extract',
-  'secure',
-  'ocr',
-]
-
 export function Sidebar({ current, onSelect }: Props) {
+  const t = useMessages(toolMessages)
+  const c = useMessages(commonMessages)
   return (
     <aside className="w-60 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto">
       <nav className="p-3 space-y-5">
@@ -23,7 +20,7 @@ export function Sidebar({ current, onSelect }: Props) {
           return (
             <div key={cat} className="space-y-1">
               <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-                {CATEGORY_LABELS[cat]}
+                {t.categories[cat]}
               </div>
               <ul className="space-y-0.5">
                 {tools.map((tool) => {
@@ -44,16 +41,16 @@ export function Sidebar({ current, onSelect }: Props) {
                         `}
                       >
                         <Icon className="w-4 h-4 shrink-0" />
-                        <span className="flex-1 truncate font-medium">{tool.name}</span>
+                        <span className="flex-1 truncate font-medium">{t.tools[tool.id].name}</span>
                         {tool.quality === 'best-effort' && (
                           <span
                             className={`
                               text-[9px] font-bold px-1.5 py-0.5 rounded
                               ${active ? 'bg-accent/20' : 'bg-bg-subtle text-fg-subtle'}
                             `}
-                            title="Quality varies by source PDF"
+                            title={c.betaHint}
                           >
-                            BETA
+                            {c.beta}
                           </span>
                         )}
                       </button>

@@ -1,5 +1,7 @@
 import { createWorker, type Worker } from 'tesseract.js'
 import { loadPdfJs } from './pdfOps'
+import { pick, type Lang } from '../i18n'
+import ocrMessages from '../i18n/messages/ocr'
 
 export interface OcrWord {
   text: string
@@ -131,9 +133,10 @@ export async function ocrPdf(
   options: OcrOptions,
   onProgress?: (current: number, total: number, status: string) => void,
 ): Promise<OcrResult[]> {
-  if (options.languages.length === 0) throw new Error('Pick at least one language')
+  const m = pick(ocrMessages)
+  if (options.languages.length === 0) throw new Error(m.errors.noLanguage)
 
-  onProgress?.(0, 0, 'Loading OCR engine...')
+  onProgress?.(0, 0, m.progress.loadingEngine)
   const worker = await getWorker(options.languages)
   await worker.setParameters({
     tessedit_pageseg_mode: options.psm as never,
@@ -158,7 +161,7 @@ export async function ocrPdf(
 
     preprocess(canvas, options.preprocess)
 
-    onProgress?.(i - 1, total, `Recognizing page ${i} of ${total}...`)
+    onProgress?.(i - 1, total, m.progress.recognizing(i, total))
     const result = await worker.recognize(canvas)
     const data = result.data as {
       text: string
@@ -179,7 +182,7 @@ export async function ocrPdf(
     })
 
     page.cleanup()
-    onProgress?.(i, total, `Recognized page ${i} of ${total}`)
+    onProgress?.(i, total, m.progress.recognized(i, total))
   }
 
   return results
@@ -208,17 +211,10 @@ export const OCR_LANGUAGES: { code: string; label: string }[] = [
   { code: 'ara', label: 'العربية' },
 ]
 
-export const PSM_OPTIONS: { value: string; label: string; help: string }[] = [
-  { value: '3', label: 'Auto', help: 'Default — auto layout analysis' },
-  { value: '1', label: 'Auto + OSD', help: 'Auto with orientation/script detection' },
-  { value: '4', label: 'Single column', help: 'Variable-sized text in one column' },
-  { value: '6', label: 'Single block', help: 'A uniform block of text (good for screenshots)' },
-  { value: '7', label: 'Single line', help: 'One text line (signs, titles)' },
-  { value: '8', label: 'Single word', help: 'One word' },
-  { value: '11', label: 'Sparse text', help: 'Find as much text as possible, no order' },
-  { value: '12', label: 'Sparse + OSD', help: 'Sparse with orientation detection' },
-  { value: '13', label: 'Raw line', help: 'Treat as a raw line, bypass layout' },
-]
+/** Page segmentation modes offered in the UI, in display order. Labels/help live in i18n/messages/ocr (`psm`). */
+export const PSM_VALUES = ['3', '1', '4', '6', '7', '8', '11', '12', '13'] as const
+
+export type PsmValue = (typeof PSM_VALUES)[number]
 
 export const DEFAULT_OCR_OPTIONS: OcrOptions = {
   languages: ['eng'],
@@ -230,4 +226,16 @@ export const DEFAULT_OCR_OPTIONS: OcrOptions = {
     contrast: true,
     binarize: false,
   },
+}
+
+/** Initial recognition languages for a given UI language (Korean documents usually contain English too). */
+export function defaultOcrLanguages(lang: Lang): string[] {
+  switch (lang) {
+    case 'ko':
+      return ['kor', 'eng']
+    case 'es':
+      return ['spa']
+    default:
+      return ['eng']
+  }
 }

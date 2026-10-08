@@ -9,13 +9,17 @@ import { ProgressBar } from '../components/ProgressBar'
 import { extractText, joinPlainText, type PageText } from '../lib/extract'
 import { downloadBlob, formatBytes } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'extract-text')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import extractTextMessages from '../i18n/messages/extractText'
 
 type Mode = 'single' | 'per-page'
 
 export function ExtractText() {
+  const meta = useToolMeta('extract-text')
+  const t = useMessages(extractTextMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
   const [mode, setMode] = useState<Mode>('single')
   const [progress, setProgress] = useState<{ c: number; t: number } | null>(null)
@@ -35,7 +39,7 @@ export function ExtractText() {
       const result = await extractText(file, (c, t) => setProgress({ c, t }))
       setPages(result)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Extraction failed')
+      alert(e instanceof Error ? e.message : t.failed)
     } finally {
       setRunning(false)
       setProgress(null)
@@ -63,7 +67,7 @@ export function ExtractText() {
         rightSlot={
           <button onClick={run} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Extracting...' : 'Extract text'}
+            {running ? t.extracting : t.extract}
           </button>
         }
       />
@@ -71,12 +75,12 @@ export function ExtractText() {
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-80 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-6">
           <FilePill file={file} onRemove={() => { setFile(null); setPages(null) }} />
-          <OptionGroup icon={FileText} title="Output">
+          <OptionGroup icon={FileText} title={t.output}>
             <Segmented
               value={mode}
               options={[
-                { value: 'single', label: 'Single .txt' },
-                { value: 'per-page', label: 'Per-page' },
+                { value: 'single', label: t.modes.single },
+                { value: 'per-page', label: t.modes.perPage },
               ]}
               onChange={(v) => setMode(v as Mode)}
               disabled={running}
@@ -91,7 +95,7 @@ export function ExtractText() {
                 className="btn-secondary w-full"
               >
                 <Copy className="w-3.5 h-3.5" />
-                Copy all to clipboard
+                {t.copyAll}
               </button>
               <button
                 onClick={() => {
@@ -108,25 +112,25 @@ export function ExtractText() {
                 }}
                 className="btn-primary w-full"
               >
-                Download
+                {c.download}
               </button>
             </div>
           )}
         </aside>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {progress && <ProgressBar current={progress.c} total={progress.t} label="Extracting pages..." />}
+          {progress && <ProgressBar current={progress.c} total={progress.t} label={t.extractingPages} />}
           {pages ? (
             <div className="space-y-3">
               <StatusPanel
                 variant="success"
-                title={`Extracted ${pages.length} pages`}
-                message={`${fullText.length.toLocaleString()} chars · ${formatBytes(new Blob([fullText]).size)}`}
+                title={t.extracted(pages.length)}
+                message={`${t.chars(fullText.length)} · ${formatBytes(new Blob([fullText]).size)}`}
               />
               <div className="card p-4">
                 <pre className="text-xs whitespace-pre-wrap font-mono text-fg-muted max-h-[60vh] overflow-y-auto">
                   {fullText.slice(0, 20000)}
-                  {fullText.length > 20000 && '\n\n... (truncated in preview)'}
+                  {fullText.length > 20000 && t.truncated}
                 </pre>
               </div>
             </div>
@@ -134,8 +138,8 @@ export function ExtractText() {
             !running && (
               <StatusPanel
                 variant="info"
-                title="Ready to extract"
-                message="Click Extract text to read all text content from this PDF."
+                title={t.ready}
+                message={t.readyMessage}
               />
             )
           )}

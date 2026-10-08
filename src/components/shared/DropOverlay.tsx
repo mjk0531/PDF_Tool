@@ -1,10 +1,13 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { Upload } from 'lucide-react'
+import { useMessages } from '../../i18n'
+import commonMessages from '../../i18n/messages/common'
 
 interface Props {
   onFiles: (files: File[]) => void
   accept?: string
-  acceptLabel?: string
+  /** What the drop target takes; picks the wording of its overlay. */
+  kind?: 'pdf' | 'image'
   multiple?: boolean
   filterFn?: (file: File) => boolean
   className?: string
@@ -20,12 +23,13 @@ interface Props {
 export function DropOverlay({
   onFiles,
   accept = 'application/pdf,.pdf',
-  acceptLabel = 'files',
+  kind = 'pdf',
   multiple = true,
   filterFn,
   className = '',
   children,
 }: Props) {
+  const dropToAdd = useMessages(commonMessages).fileKinds[kind].dropToAdd
   const [isDragging, setIsDragging] = useState(false)
   const dragCounter = useRef(0)
 
@@ -88,7 +92,7 @@ export function DropOverlay({
         <div className="absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-accent bg-accent/10 backdrop-blur-[2px] pointer-events-none animate-fade-in">
           <div className="flex flex-col items-center gap-2 text-accent">
             <Upload className="w-8 h-8" strokeWidth={2.25} />
-            <span className="text-sm font-semibold">Drop {acceptLabel} to add</span>
+            <span className="text-sm font-semibold">{dropToAdd}</span>
           </div>
         </div>
       )}

@@ -9,11 +9,15 @@ import { extractText } from '../lib/extract'
 import { pagesToDocx } from '../lib/office'
 import { downloadBlob, formatBytes } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'pdf-to-word')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import officeMessages from '../i18n/messages/office'
 
 export function PdfToWord() {
+  const meta = useToolMeta('pdf-to-word')
+  const t = useMessages(officeMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState<{ c: number; t: number } | null>(null)
@@ -33,7 +37,7 @@ export function PdfToWord() {
       const blob = await pagesToDocx(pages, stripExtension(file.name))
       setResult(blob)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Conversion failed')
+      alert(e instanceof Error ? e.message : t.conversionFailed)
     } finally {
       setRunning(false)
       setProgress(null)
@@ -59,7 +63,7 @@ export function PdfToWord() {
         rightSlot={
           <button onClick={run} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Converting...' : 'Convert to .docx'}
+            {running ? c.converting : t.word.convert}
           </button>
         }
       />
@@ -69,23 +73,23 @@ export function PdfToWord() {
         <div className="card p-4 flex items-start gap-3">
           <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
           <div className="text-xs text-fg-muted leading-relaxed">
-            <strong className="text-fg">Best-effort conversion.</strong> The output preserves text, paragraphs, and a heading hierarchy inferred from font size — but multi-column layouts, tables, and complex formatting will not survive. For scanned PDFs, run OCR first.
+            <strong className="text-fg">{t.word.noticeTitle}</strong> {t.word.noticeBody}
           </div>
         </div>
 
-        {progress && <ProgressBar current={progress.c} total={progress.t} label="Extracting text..." />}
+        {progress && <ProgressBar current={progress.c} total={progress.t} label={t.word.extracting} />}
 
         {result && (
           <StatusPanel
             variant="success"
-            title="Word document generated"
+            title={t.word.done}
             message={`${formatBytes(result.size)}`}
           >
             <button
               onClick={() => downloadBlob(result, `${stripExtension(file.name)}.docx`)}
               className="btn-primary"
             >
-              Download .docx
+              {t.downloadExt('.docx')}
             </button>
           </StatusPanel>
         )}

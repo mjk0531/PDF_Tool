@@ -31,6 +31,8 @@ import {
   type PDFRef,
 } from 'pdf-lib'
 import { loadPdfJs } from './pdfOps'
+import { pick } from '../i18n'
+import compressMessages from '../i18n/messages/compress'
 
 /* ---------- Tunables ---------- */
 
@@ -121,14 +123,15 @@ export async function compressPdf(
   onProgress?: ProgressFn,
 ): Promise<CompressResult> {
   const originalSize = file.size
+  const msg = pick(compressMessages).progress
 
-  onProgress?.('Reading PDF...')
+  onProgress?.(msg.reading)
   const inputBytes = new Uint8Array(await file.arrayBuffer())
 
   const phase1 = await recompressEmbeddedImages(
     inputBytes,
     LEVEL_PRESETS[level],
-    (current, total) => onProgress?.(`Recompressing image ${current} of ${total}...`),
+    (current, total) => onProgress?.(msg.recompressingImage(current, total)),
   )
 
   let finalBytes: Uint8Array
@@ -139,7 +142,7 @@ export async function compressPdf(
     finalBytes = phase1.bytes
   }
 
-  onProgress?.('Analyzing result...')
+  onProgress?.(msg.analyzing)
   const breakdown = await analyzeStructure(finalBytes)
 
   return {
@@ -160,9 +163,10 @@ export async function forceCompressPdf(
   const src = await loadPdfJs(file)
   const out = await PDFDocument.create()
   const totalPages = src.numPages
+  const msg = pick(compressMessages).progress
 
   for (let i = 1; i <= totalPages; i++) {
-    onProgress?.(i - 1, totalPages, `Rasterizing page ${i} of ${totalPages}...`)
+    onProgress?.(i - 1, totalPages, msg.rasterizingPage(i, totalPages))
 
     const page = await src.getPage(i)
     const viewport = page.getViewport({ scale: options.dpi / 72 })
@@ -175,7 +179,7 @@ export async function forceCompressPdf(
     newPage.drawImage(jpg, { x: 0, y: 0, width: canvas.width, height: canvas.height })
 
     page.cleanup()
-    onProgress?.(i, totalPages, `Rasterized page ${i} of ${totalPages}`)
+    onProgress?.(i, totalPages, msg.rasterizedPage(i, totalPages))
   }
 
   const bytes = await out.save({ useObjectStreams: true })
@@ -431,14 +435,15 @@ function reversePngPredictor(
  * =========================================================== */
 
 async function runMupdfPass(bytes: Uint8Array, onProgress?: ProgressFn): Promise<Uint8Array> {
-  onProgress?.('Loading PDF engine...')
+  const msg = pick(compressMessages).progress
+  onProgress?.(msg.loadingEngine)
   const mupdf = await getMupdf()
 
   const doc = mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as InstanceType<
     typeof mupdf.PDFDocument
   >
   try {
-    onProgress?.('Subsetting fonts...')
+    onProgress?.(msg.subsettingFonts)
     try {
       doc.subsetFonts()
     } catch {
@@ -446,7 +451,7 @@ async function runMupdfPass(bytes: Uint8Array, onProgress?: ProgressFn): Promise
       // Carry on with the structural save.
     }
 
-    onProgress?.('Optimizing structure...')
+    onProgress?.(msg.optimizing)
     const buf = doc.saveToBuffer({
       compress: true,
       compressImages: true,

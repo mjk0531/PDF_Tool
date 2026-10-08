@@ -18,14 +18,18 @@ import 'pretendard/dist/web/static/Pretendard-Regular.css'
 import { loadPdfJs } from '../lib/pdfOps'
 import { bytesToBlob, downloadBlob, formatBytes } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'edit')!
+import { useToolMeta } from './registry'
+import { pick, useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import editMessages from '../i18n/messages/edit'
 
 /** CSS pixels per PDF point. ~1.4 ≈ fit-to-width for a ~600px container. */
 const DISPLAY_SCALE = 1.4
 
 export function Edit() {
+  const meta = useToolMeta('edit')
+  const t = useMessages(editMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
   const [pages, setPages] = useState<PageInfo[]>([])
   const [existingText, setExistingText] = useState<Map<number, ExistingTextItem[]>>(new Map())
@@ -115,7 +119,7 @@ export function Edit() {
         }
       } catch (err) {
         console.error(err)
-        setWarnings([err instanceof Error ? err.message : 'Failed to load PDF'])
+        setWarnings([err instanceof Error ? err.message : pick(editMessages).errors.loadFailed])
       } finally {
         if (!cancelled) setIsLoading(false)
       }
@@ -183,7 +187,7 @@ export function Edit() {
   const runOcrForPage = useCallback(
     async (pageNumber: number) => {
       if (!file) return
-      setOcrRunning({ page: pageNumber, status: 'Starting...' })
+      setOcrRunning({ page: pageNumber, status: pick(editMessages).ocr.starting })
       try {
         const result = await ocrPageToEditableItems(file, pageNumber, 'eng+kor', (status) =>
           setOcrRunning({ page: pageNumber, status }),
@@ -194,7 +198,7 @@ export function Edit() {
           return next
         })
       } catch (e) {
-        alert(e instanceof Error ? e.message : 'OCR failed')
+        alert(e instanceof Error ? e.message : pick(editMessages).errors.ocrFailed)
       } finally {
         setOcrRunning(null)
       }
@@ -222,7 +226,7 @@ export function Edit() {
       downloadBlob(blob, `${stripExtension(file.name)}_edited.pdf`)
       if (result.warnings.length > 0) setWarnings(result.warnings)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Export failed')
+      alert(e instanceof Error ? e.message : pick(editMessages).errors.exportFailed)
     } finally {
       setIsSaving(false)
     }
@@ -255,15 +259,15 @@ export function Edit() {
                 onClick={() => setAnnotations([])}
                 disabled={isSaving}
                 className="btn-ghost text-xs"
-                title="Discard all edits"
+                title={t.discardAll}
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                Clear edits ({totalAnnotations})
+                {t.clearEdits(totalAnnotations)}
               </button>
             )}
             <button onClick={handleSave} disabled={isSaving} className="btn-primary">
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              {isSaving ? 'Saving...' : 'Save edited PDF'}
+              {isSaving ? t.saving : t.save}
             </button>
           </div>
         }
@@ -273,7 +277,7 @@ export function Edit() {
         <aside className="w-64 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-4 space-y-4">
           <FilePill
             file={file}
-            detail={pages.length > 0 ? `${pages.length} pages` : undefined}
+            detail={pages.length > 0 ? c.pages(pages.length) : undefined}
             onRemove={() => {
               setFile(null)
               setPages([])
@@ -289,9 +293,7 @@ export function Edit() {
             pendingImagePresent={!!pendingImage}
           />
           <div className="card p-3 text-[11px] text-fg-subtle leading-relaxed">
-            Overlay text uses <strong className="text-fg">Pretendard</strong> (Korean + Latin + partial CJK). Lines wrap to the
-            text box width — drag the right handle to set it. For scanned PDFs with no
-            selectable text, use the OCR button below each page.
+            {t.fontNote(<strong className="text-fg">Pretendard</strong>)}
           </div>
         </aside>
 
@@ -335,7 +337,7 @@ export function Edit() {
                           ) : (
                             <>
                               <ScanText className="w-3.5 h-3.5" />
-                              Make page {p.number} editable with OCR
+                              {t.ocr.makeEditable(p.number)}
                             </>
                           )}
                         </button>
@@ -359,20 +361,22 @@ export function Edit() {
 }
 
 function LoadingState() {
+  const t = useMessages(editMessages)
   return (
     <div className="flex items-center justify-center py-16 text-fg-muted">
       <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-      Rendering pages...
+      {t.rendering}
     </div>
   )
 }
 
 function WarningsList({ warnings }: { warnings: string[] }) {
+  const t = useMessages(editMessages).warnings
   return (
     <StatusPanel
       variant="info"
-      title={`${warnings.length} warning${warnings.length === 1 ? '' : 's'} from the last save`}
-      message={`Total ${formatBytes(0)} skipped — see details.`}
+      title={t.title(warnings.length)}
+      message={t.skipped(formatBytes(0))}
     >
       <ul className="text-[11px] text-fg-muted space-y-1 list-disc pl-4">
         {warnings.slice(0, 8).map((w, i) => (

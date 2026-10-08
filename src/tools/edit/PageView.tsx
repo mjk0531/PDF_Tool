@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import type { Annotation, TextAnnotation } from '../../lib/editor'
+import { useMessages } from '../../i18n'
+import commonMessages from '../../i18n/messages/common'
+import editMessages from '../../i18n/messages/edit'
 
 export interface PageInfo {
   number: number // 1-indexed
@@ -94,6 +97,8 @@ export function PageView({
   onEditExistingText,
   onImagePlaced,
 }: Props) {
+  const t = useMessages(editMessages).page
+  const c = useMessages(commonMessages)
   const containerRef = useRef<HTMLDivElement>(null)
   const [whiteoutDraft, setWhiteoutDraft] = useState<{
     startPx: { x: number; y: number }
@@ -128,7 +133,7 @@ export function PageView({
         x: pt.x,
         y: pt.y,
         width: 200, // default; user can drag the bottom-right corner to resize
-        text: 'Type here',
+        text: t.newText,
         fontSize: textStyle.fontSize,
         color: textStyle.color,
       } as Annotation)
@@ -229,7 +234,7 @@ export function PageView({
   return (
     <div className="space-y-1.5">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle px-1">
-        Page {pageInfo.number}
+        {c.page(pageInfo.number)}
       </div>
       <div
         ref={containerRef}
@@ -241,7 +246,7 @@ export function PageView({
         {/* Rendered page background */}
         <img
           src={pageInfo.thumbDataUrl}
-          alt={`Page ${pageInfo.number}`}
+          alt={c.page(pageInfo.number)}
           draggable={false}
           className="absolute inset-0 w-full h-full pointer-events-none"
         />
@@ -269,7 +274,7 @@ export function PageView({
                   height: css.height,
                   cursor: 'text',
                 }}
-                title={`Edit: ${item.text}`}
+                title={t.editText(item.text)}
               />
             )
           })}
@@ -338,6 +343,7 @@ function TextAnnotationView({
   onResizeWidth: (width: number) => void
   onDelete: () => void
 }) {
+  const t = useMessages(editMessages).page
   const css = textBaselineToCss(ann, scale, pageHeightPts)
   const widthPx = ann.width * scale
   const [resizing, setResizing] = useState<{
@@ -382,7 +388,7 @@ function TextAnnotationView({
       <button
         onClick={onDelete}
         className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center"
-        title="Delete"
+        title={t.delete}
       >
         <Trash2 className="w-2.5 h-2.5" />
       </button>
@@ -393,7 +399,7 @@ function TextAnnotationView({
           setResizing({ startX: e.clientX, startWidth: ann.width })
         }}
         className="absolute -right-1 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-accent rounded-sm cursor-ew-resize opacity-0 group-hover:opacity-100"
-        title="Drag to set wrap width"
+        title={t.dragWrapWidth}
       />
     </div>
   )
@@ -414,6 +420,7 @@ function ImageAnnotationView({
   onResize: (width: number, height: number) => void
   onDelete: () => void
 }) {
+  const t = useMessages(editMessages).page
   const css = pdfRectToCss(ann, scale, pageHeightPts)
   const [dragging, setDragging] = useState<{
     kind: 'move' | 'resize'
@@ -480,7 +487,7 @@ function ImageAnnotationView({
       <button
         onClick={onDelete}
         className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center"
-        title="Delete"
+        title={t.delete}
       >
         <Trash2 className="w-2.5 h-2.5" />
       </button>
@@ -499,6 +506,7 @@ function WhiteoutAnnotationView({
   pageHeightPts: number
   onDelete: () => void
 }) {
+  const t = useMessages(editMessages).page
   const css = pdfRectToCss(ann, scale, pageHeightPts)
   return (
     <div
@@ -509,7 +517,7 @@ function WhiteoutAnnotationView({
       <button
         onClick={onDelete}
         className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center"
-        title="Delete"
+        title={t.delete}
       >
         <Trash2 className="w-2.5 h-2.5" />
       </button>

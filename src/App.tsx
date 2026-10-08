@@ -3,7 +3,9 @@ import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { Landing } from './components/Landing'
 import { applyTheme, getInitialTheme, type Theme } from './lib/theme'
-import type { ToolId } from './tools/registry'
+import { TOOLS, type ToolId } from './tools/registry'
+import { useMessages } from './i18n'
+import shellMessages from './i18n/messages/shell'
 
 import { Edit } from './tools/Edit'
 import { PdfToImage } from './tools/PdfToImage'
@@ -52,10 +54,18 @@ function getInitialTool(): ToolId | null {
 export default function App() {
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
   const [tool, setTool] = useState<ToolId | null>(() => getInitialTool())
+  const t = useMessages(shellMessages)
 
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
+
+  useEffect(() => {
+    document.title = t.docTitle(TOOLS.length)
+    document
+      .querySelector('meta[name="description"]')
+      ?.setAttribute('content', t.docDescription(TOOLS.length))
+  }, [t])
 
   useEffect(() => {
     if (tool) {

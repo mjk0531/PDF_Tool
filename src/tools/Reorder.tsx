@@ -7,9 +7,10 @@ import { StatusPanel } from '../components/shared/StatusPanel'
 import { getPageCount, renderThumbnail, reorderPages } from '../lib/pdfOps'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'reorder')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import reorderMessages from '../i18n/messages/reorder'
 
 interface PageItem {
   id: string
@@ -19,6 +20,9 @@ interface PageItem {
 }
 
 export function Reorder() {
+  const meta = useToolMeta('reorder')
+  const t = useMessages(reorderMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
   const [pages, setPages] = useState<PageItem[]>([])
   const [running, setRunning] = useState(false)
@@ -91,7 +95,7 @@ export function Reorder() {
     if (!file) return
     const order = pages.filter((p) => !p.removed).map((p) => p.originalNumber)
     if (order.length === 0) {
-      alert('At least one page must remain')
+      alert(t.atLeastOne)
       return
     }
     setRunning(true)
@@ -100,7 +104,7 @@ export function Reorder() {
       const bytes = await reorderPages(file, order)
       setResult(bytesToBlob(bytes, 'application/pdf'))
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Reorder failed')
+      alert(e instanceof Error ? e.message : t.failed)
     } finally {
       setRunning(false)
     }
@@ -126,11 +130,11 @@ export function Reorder() {
         rightSlot={
           <div className="flex items-center gap-2">
             <button onClick={reset} disabled={running} className="btn-secondary text-xs">
-              Reset
+              {t.reset}
             </button>
             <button onClick={run} disabled={running || pages.length === 0} className="btn-primary">
               <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-              {running ? 'Building...' : `Save (${kept}/${pages.length})`}
+              {running ? t.building : t.save(kept, pages.length)}
             </button>
           </div>
         }
@@ -139,7 +143,7 @@ export function Reorder() {
       <div className="px-6 py-3 border-b border-border bg-bg-subtle/30">
         <FilePill
           file={file}
-          detail={`${kept}/${pages.length} pages kept`}
+          detail={t.pagesKept(kept, pages.length)}
           onRemove={() => { setFile(null); setPages([]) }}
         />
       </div>
@@ -148,7 +152,7 @@ export function Reorder() {
         {pages.length === 0 ? (
           <div className="flex items-center justify-center py-16 text-fg-muted text-sm">
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Loading pages...
+            {t.loadingPages}
           </div>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
@@ -164,7 +168,7 @@ export function Reorder() {
                   {p.thumbnail ? (
                     <img
                       src={p.thumbnail}
-                      alt={`Page ${p.originalNumber}`}
+                      alt={c.page(p.originalNumber)}
                       className="w-full h-full object-contain"
                     />
                   ) : (
@@ -173,14 +177,14 @@ export function Reorder() {
                 </div>
                 <div className="p-2 flex items-center justify-between text-xs">
                   <span className="font-mono text-fg-muted">#{idx + 1}</span>
-                  <span className="text-fg-subtle">orig p{p.originalNumber}</span>
+                  <span className="text-fg-subtle">{t.originalPage(p.originalNumber)}</span>
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between">
                   <div className="flex justify-end">
                     <button
                       onClick={() => toggleRemove(p.id)}
                       className="btn bg-red-500/90 text-white p-1.5 rounded-md"
-                      title={p.removed ? 'Restore' : 'Remove'}
+                      title={p.removed ? t.restore : t.remove}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -211,14 +215,14 @@ export function Reorder() {
           <div className="mt-6">
             <StatusPanel
               variant="success"
-              title="Saved successfully"
-              message={`${formatBytes(result.size)} · ${kept} pages`}
+              title={t.success}
+              message={`${formatBytes(result.size)} · ${c.pages(kept)}`}
             >
               <button
                 onClick={() => downloadBlob(result, `${stripExtension(file.name)}_reordered.pdf`)}
                 className="btn-primary"
               >
-                Download
+                {c.download}
               </button>
             </StatusPanel>
           </div>

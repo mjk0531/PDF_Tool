@@ -6,9 +6,10 @@ import { DropOverlay } from '../components/shared/DropOverlay'
 import { StatusPanel } from '../components/shared/StatusPanel'
 import { mergePdfs, getPageCount } from '../lib/pdfOps'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'merge')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import mergeMessages from '../i18n/messages/merge'
 
 interface FileEntry {
   file: File
@@ -17,6 +18,9 @@ interface FileEntry {
 }
 
 export function Merge() {
+  const meta = useToolMeta('merge')
+  const t = useMessages(mergeMessages)
+  const c = useMessages(commonMessages)
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<Blob | null>(null)
@@ -61,7 +65,7 @@ export function Merge() {
       const bytes = await mergePdfs(entries.map((e) => e.file))
       setResult(bytesToBlob(bytes, 'application/pdf'))
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Merge failed')
+      alert(e instanceof Error ? e.message : t.errors.mergeFailed)
     } finally {
       setRunning(false)
     }
@@ -71,7 +75,7 @@ export function Merge() {
     return (
       <div className="flex-1 flex flex-col">
         <ToolHeader icon={meta.icon} title={meta.name} description={meta.description} />
-        <FileDrop onFiles={addFiles} description="Drop two or more PDFs to merge in order" />
+        <FileDrop onFiles={addFiles} description={t.dropDescription} />
       </div>
     )
   }
@@ -87,17 +91,17 @@ export function Merge() {
         rightSlot={
           <button onClick={run} disabled={entries.length < 2 || running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Merging...' : `Merge ${entries.length} files`}
+            {running ? t.merging : t.mergeFiles(entries.length)}
           </button>
         }
       />
-      <DropOverlay onFiles={addFiles} acceptLabel="PDFs" className="flex-1 min-h-0">
+      <DropOverlay onFiles={addFiles} className="flex-1 min-h-0">
         <div className="h-full overflow-y-auto p-6 space-y-4 max-w-4xl mx-auto w-full">
         <FileDrop onFiles={addFiles} compact noDrag />
 
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted mb-2 px-1">
-            Order ({entries.length} files · {totalPages} total pages)
+            {t.order(entries.length, totalPages)}
           </div>
           <ul className="space-y-1.5">
             {entries.map((e, idx) => (
@@ -113,7 +117,7 @@ export function Merge() {
                   <div className="text-sm font-medium truncate">{e.file.name}</div>
                   <div className="text-[11px] text-fg-subtle">
                     {formatBytes(e.file.size)}
-                    {e.pageCount !== null && ` · ${e.pageCount} pages`}
+                    {e.pageCount !== null && ` · ${c.pages(e.pageCount)}`}
                   </div>
                 </div>
                 <div className="flex items-center gap-0.5">
@@ -121,7 +125,7 @@ export function Merge() {
                     onClick={() => move(idx, -1)}
                     disabled={idx === 0}
                     className="btn-ghost p-1.5"
-                    aria-label="Move up"
+                    aria-label={t.moveUp}
                   >
                     <ArrowUp className="w-3.5 h-3.5" />
                   </button>
@@ -129,14 +133,14 @@ export function Merge() {
                     onClick={() => move(idx, 1)}
                     disabled={idx === entries.length - 1}
                     className="btn-ghost p-1.5"
-                    aria-label="Move down"
+                    aria-label={t.moveDown}
                   >
                     <ArrowDown className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => remove(e.id)}
                     className="btn-ghost p-1.5"
-                    aria-label="Remove"
+                    aria-label={t.remove}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -149,14 +153,14 @@ export function Merge() {
         {result && (
           <StatusPanel
             variant="success"
-            title="Merged successfully"
-            message={`${formatBytes(result.size)} · ${entries.length} files combined`}
+            title={t.success}
+            message={`${formatBytes(result.size)} · ${t.combined(entries.length)}`}
           >
             <button
               onClick={() => downloadBlob(result, 'merged.pdf')}
               className="btn-primary"
             >
-              Download merged.pdf
+              {t.downloadFile('merged.pdf')}
             </button>
           </StatusPanel>
         )}

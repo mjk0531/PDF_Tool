@@ -29,7 +29,10 @@ import {
 import { downloadAsZip } from '../lib/download'
 import { parsePageRange } from '../lib/pageRange'
 import type { PdfFile } from '../types'
-import { TOOLS } from './registry'
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import pdfToImageMessages from '../i18n/messages/pdfToImage'
 
 const DEFAULT_OPTIONS: Omit<ConvertOptions, 'pages'> = {
   dpi: 150,
@@ -51,9 +54,10 @@ function genId() {
   return Math.random().toString(36).slice(2, 10)
 }
 
-const meta = TOOLS.find((t) => t.id === 'pdf-to-image')!
-
 export function PdfToImage() {
+  const meta = useToolMeta('pdf-to-image')
+  const t = useMessages(pdfToImageMessages)
+  const c = useMessages(commonMessages)
   const [files, setFiles] = useState<PdfFile[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [options, setOptions] = useState(DEFAULT_OPTIONS)
@@ -98,7 +102,7 @@ export function PdfToImage() {
                 ? {
                     ...f,
                     status: 'error',
-                    error: err instanceof Error ? err.message : 'Failed to load PDF',
+                    error: err instanceof Error ? err.message : t.errors.loadFailed,
                   }
                 : f,
             ),
@@ -106,7 +110,7 @@ export function PdfToImage() {
         }
       }
     },
-    [selectedId],
+    [selectedId, t],
   )
 
   const removeFile = useCallback(
@@ -197,12 +201,12 @@ export function PdfToImage() {
       }
     } catch (err) {
       console.error(err)
-      alert(err instanceof Error ? err.message : 'Conversion failed')
+      alert(err instanceof Error ? err.message : t.errors.conversionFailed)
     } finally {
       setProgress(null)
       setIsConverting(false)
     }
-  }, [canConvert, files, options, pageRangeText])
+  }, [canConvert, files, options, pageRangeText, t])
 
   const downloadAllAsZip = useCallback(async () => {
     const allDone = files.filter((f) => f.status === 'done' && f.convertedPages.length > 0)
@@ -243,12 +247,12 @@ export function PdfToImage() {
             {totalConverted > 0 && (
               <button onClick={downloadAllAsZip} disabled={isConverting} className="btn-secondary">
                 <Package className="w-4 h-4" />
-                ZIP All
+                {t.zipAll}
               </button>
             )}
             <button onClick={convertAll} disabled={!canConvert} className="btn-primary">
               <Sparkles className={`w-4 h-4 ${isConverting ? 'animate-pulse' : ''}`} />
-              {isConverting ? 'Converting...' : 'Convert'}
+              {isConverting ? c.converting : t.convert}
             </button>
           </div>
         }
@@ -257,7 +261,7 @@ export function PdfToImage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Settings */}
         <aside className="w-72 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-6">
-          <OptionGroup icon={Sliders} title="Resolution (DPI)">
+          <OptionGroup icon={Sliders} title={t.options.resolution}>
             <Segmented
               value={DPI_PRESETS.includes(options.dpi as (typeof DPI_PRESETS)[number]) ? options.dpi : -1}
               options={DPI_PRESETS.map((d) => ({ value: d, label: String(d) }))}
@@ -278,7 +282,7 @@ export function PdfToImage() {
             />
           </OptionGroup>
 
-          <OptionGroup icon={ImageIcon} title="Format">
+          <OptionGroup icon={ImageIcon} title={t.options.format}>
             <Segmented
               value={options.format}
               options={FORMATS}
@@ -288,7 +292,7 @@ export function PdfToImage() {
             {options.format !== 'png' && (
               <div className="space-y-1.5 pt-1 animate-fade-in">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-fg-muted">Quality</span>
+                  <span className="text-fg-muted">{t.options.quality}</span>
                   <span className="text-fg font-mono">{Math.round(options.quality * 100)}%</span>
                 </div>
                 <input
@@ -305,7 +309,7 @@ export function PdfToImage() {
             )}
           </OptionGroup>
 
-          <OptionGroup icon={Palette} title="Background">
+          <OptionGroup icon={Palette} title={t.options.background}>
             <Segmented
               value={
                 options.backgroundColor === null
@@ -315,9 +319,9 @@ export function PdfToImage() {
                     : 'custom'
               }
               options={[
-                { value: 'transparent', label: 'Transparent' },
-                { value: 'white', label: 'White' },
-                { value: 'custom', label: 'Custom' },
+                { value: 'transparent', label: t.options.backgrounds.transparent },
+                { value: 'white', label: t.options.backgrounds.white },
+                { value: 'custom', label: t.options.backgrounds.custom },
               ]}
               onChange={(v) => {
                 if (v === 'transparent') updateOption('backgroundColor', null)
@@ -345,11 +349,11 @@ export function PdfToImage() {
               </div>
             )}
             {options.format !== 'png' && (
-              <p className="text-[11px] text-fg-subtle">Transparent only available for PNG.</p>
+              <p className="text-[11px] text-fg-subtle">{t.options.transparentPngOnly}</p>
             )}
           </OptionGroup>
 
-          <OptionGroup icon={RotateCw} title="Rotation">
+          <OptionGroup icon={RotateCw} title={t.options.rotation}>
             <Segmented
               value={options.rotation}
               options={[0, 90, 180, 270].map((r) => ({
@@ -363,23 +367,23 @@ export function PdfToImage() {
 
           <OptionGroup
             icon={FileTextIcon}
-            title="Pages"
-            hint="e.g. 1-5, 7, 10-12"
+            title={t.options.pages}
+            hint={t.options.pagesHint}
           >
             <input
               type="text"
               value={pageRangeText}
               onChange={(e) => setPageRangeText(e.target.value)}
               disabled={isConverting}
-              placeholder="All pages"
+              placeholder={t.options.allPages}
               className="input w-full text-xs"
             />
           </OptionGroup>
 
           <OptionGroup
             icon={FileTextIcon}
-            title="Filename Pattern"
-            hint="{name} · {n} padded · {N} raw · {total}"
+            title={t.options.filenamePattern}
+            hint={t.options.filenamePatternHint}
           >
             <input
               type="text"
@@ -394,7 +398,6 @@ export function PdfToImage() {
         {/* File sidebar */}
         <DropOverlay
           onFiles={handleFiles}
-          acceptLabel="PDFs"
           className="w-80 shrink-0 border-r border-border"
         >
           <div className="h-full overflow-y-auto p-4 space-y-4">
@@ -412,7 +415,7 @@ export function PdfToImage() {
               className="btn-ghost w-full justify-center text-xs"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              Clear all
+              {t.clearAll}
             </button>
           )}
           </div>
@@ -425,7 +428,7 @@ export function PdfToImage() {
               <ProgressBar
                 current={progress.current}
                 total={progress.total}
-                label={`Converting ${progress.fileName}...`}
+                label={t.convertingFile(progress.fileName)}
               />
             </div>
           )}
@@ -435,7 +438,7 @@ export function PdfToImage() {
                 {selectedFile.convertedPages.length > 0 && (
                   <div className="mb-4 flex items-center justify-between">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-muted">
-                      Converted Pages ({selectedFile.convertedPages.length})
+                      {t.convertedPages(selectedFile.convertedPages.length)}
                     </h3>
                     {selectedFile.status === 'done' && (
                       <button
@@ -448,7 +451,7 @@ export function PdfToImage() {
                         className="btn-ghost text-xs"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        Download all
+                        {t.downloadAll}
                       </button>
                     )}
                   </div>

@@ -1,5 +1,9 @@
 import type { StructureBreakdown } from '../../lib/compress'
 import { formatBytes } from '../../lib/download'
+import { useMessages } from '../../i18n'
+import compressMessages from '../../i18n/messages/compress'
+
+type Labels = (typeof compressMessages)['en']['breakdown']
 
 interface Row {
   label: string
@@ -8,27 +12,28 @@ interface Row {
   count?: number
 }
 
-function buildRows(b: StructureBreakdown): Row[] {
+function buildRows(b: StructureBreakdown, t: Labels): Row[] {
   return [
-    { label: 'Signatures', bytes: b.signatures, color: 'bg-red-500', count: b.signatureCount },
-    { label: 'Fonts', bytes: b.fonts, color: 'bg-orange-500', count: b.fontCount },
-    { label: 'Images', bytes: b.images, color: 'bg-blue-500', count: b.imageCount },
-    { label: 'Content streams', bytes: b.contentStreams, color: 'bg-green-500' },
-    { label: 'Metadata', bytes: b.metadata, color: 'bg-purple-500' },
-    { label: 'Other (xref, dicts, …)', bytes: b.other, color: 'bg-fg-subtle' },
+    { label: t.signatures, bytes: b.signatures, color: 'bg-red-500', count: b.signatureCount },
+    { label: t.fonts, bytes: b.fonts, color: 'bg-orange-500', count: b.fontCount },
+    { label: t.images, bytes: b.images, color: 'bg-blue-500', count: b.imageCount },
+    { label: t.contentStreams, bytes: b.contentStreams, color: 'bg-green-500' },
+    { label: t.metadata, bytes: b.metadata, color: 'bg-purple-500' },
+    { label: t.other, bytes: b.other, color: 'bg-fg-subtle' },
   ]
     .filter((r) => r.bytes > 0)
     .sort((a, b) => b.bytes - a.bytes)
 }
 
 export function BreakdownBar({ breakdown }: { breakdown: StructureBreakdown }) {
-  const rows = buildRows(breakdown)
+  const t = useMessages(compressMessages).breakdown
+  const rows = buildRows(breakdown, t)
   const total = breakdown.totalBytes
 
   return (
     <div className="card p-4 space-y-3">
       <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
-        Where the file size is
+        {t.heading}
       </div>
 
       <div className="flex h-2 rounded-full overflow-hidden bg-bg-subtle">

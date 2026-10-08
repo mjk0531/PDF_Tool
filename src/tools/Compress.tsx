@@ -20,9 +20,10 @@ import {
 import { getPageCount } from '../lib/pdfOps'
 import { bytesToBlob, downloadBlob, formatBytes } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'compress')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import compressMessages from '../i18n/messages/compress'
 
 /** Smart-compress result is considered "poor" if output is >80% of input. */
 const POOR_RESULT_THRESHOLD = 0.8
@@ -51,6 +52,9 @@ interface BarProgress {
 type Progress = SpinnerProgress | BarProgress
 
 export function Compress() {
+  const meta = useToolMeta('compress')
+  const t = useMessages(compressMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
   const [pageCount, setPageCount] = useState<number | null>(null)
   const [level, setLevel] = useState<CompressionLevel>(DEFAULT_COMPRESSION_LEVEL)
@@ -92,7 +96,7 @@ export function Compress() {
         imageStats: out.imageStats,
       })
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Compression failed')
+      alert(e instanceof Error ? e.message : t.failed)
     } finally {
       setRunning(false)
       setProgress(null)
@@ -114,7 +118,7 @@ export function Compress() {
         mode: 'force',
       })
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Compression failed')
+      alert(e instanceof Error ? e.message : t.failed)
     } finally {
       setRunning(false)
       setProgress(null)
@@ -141,7 +145,7 @@ export function Compress() {
         rightSlot={
           <button onClick={runSmart} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Compressing...' : 'Compress'}
+            {running ? t.compressing : t.compress}
           </button>
         }
       />
@@ -149,7 +153,7 @@ export function Compress() {
       <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full space-y-5">
         <FilePill
           file={file}
-          detail={pageCount ? `${pageCount} pages` : undefined}
+          detail={pageCount ? c.pages(pageCount) : undefined}
           onRemove={reset}
         />
 
@@ -177,25 +181,18 @@ export function Compress() {
 /* ---------- Sub-views ---------- */
 
 function ReadyPanel({ inputSize, pageCount }: { inputSize: number; pageCount: number | null }) {
+  const t = useMessages(compressMessages).ready
   return (
     <StatusPanel
       variant="info"
-      title="Ready to compress"
-      message={`${formatBytes(inputSize)} · ${pageCount ?? '?'} pages. Press Compress in the top right.`}
+      title={t.title}
+      message={t.message(formatBytes(inputSize), pageCount)}
     >
       <div className="text-[11px] text-fg-subtle leading-relaxed">
-        Two-phase pipeline: image recompression in pdf-lib, then a MuPDF structural pass
-        (font subsetting, garbage collection, stream cleanup). MuPDF's ~12 MB WASM engine
-        downloads the first time you compress and is cached afterward.
+        {t.pipeline}
       </div>
     </StatusPanel>
   )
-}
-
-const LEVEL_HINTS: Record<CompressionLevel, string> = {
-  'higher-quality': 'Near-original quality. Smaller savings, best for printable docs.',
-  recommended: 'Balanced. Keeps small text crisp while still shrinking meaningfully.',
-  'smaller-size': 'Aggressive. Smallest output. Fine for screen viewing or email.',
 }
 
 function LevelSelector({
@@ -207,24 +204,26 @@ function LevelSelector({
   onChange: (v: CompressionLevel) => void
   disabled?: boolean
 }) {
+  const levels = useMessages(compressMessages).levels
   return (
     <div className="space-y-2">
       <Segmented
         value={value}
         options={[
-          { value: 'higher-quality', label: 'Higher quality' },
-          { value: 'recommended', label: 'Recommended' },
-          { value: 'smaller-size', label: 'Smaller size' },
+          { value: 'higher-quality', label: levels['higher-quality'].label },
+          { value: 'recommended', label: levels.recommended.label },
+          { value: 'smaller-size', label: levels['smaller-size'].label },
         ]}
         onChange={onChange}
         disabled={disabled}
       />
-      <p className="text-[11px] text-fg-subtle leading-relaxed px-1">{LEVEL_HINTS[value]}</p>
+      <p className="text-[11px] text-fg-subtle leading-relaxed px-1">{levels[value].hint}</p>
     </div>
   )
 }
 
 function ProgressView({ progress }: { progress: Progress }) {
+  const t = useMessages(compressMessages)
   if (progress.kind === 'bar') {
     return <ProgressBar current={progress.current} total={progress.total || 1} label={progress.label} />
   }
@@ -234,7 +233,7 @@ function ProgressView({ progress }: { progress: Progress }) {
         <Loader2 className="w-5 h-5 text-accent animate-spin shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold">{progress.status}</div>
-          <div className="text-xs text-fg-muted mt-0.5">Large files may take 30 seconds or more.</div>
+          <div className="text-xs text-fg-muted mt-0.5">{t.largeFileHint}</div>
         </div>
       </div>
     </div>
@@ -252,6 +251,7 @@ function ResultView({
   running: boolean
   onForceCompress: () => void
 }) {
+  const t = useMessages(compressMessages).result
   const ratio = result.outputSize / result.inputSize
   const saved = result.inputSize - result.outputSize
   const shrank = ratio < 1
@@ -264,19 +264,15 @@ function ResultView({
     <>
       <StatusPanel
         variant={shrank ? 'success' : 'info'}
-        title={
-          shrank
-            ? `Compressed to ${(ratio * 100).toFixed(1)}% of original`
-            : 'No size reduction possible'
-        }
+        title={shrank ? t.compressedTo((ratio * 100).toFixed(1)) : t.noReduction}
         message={
           shrank
-            ? `Saved ${formatBytes(saved)} · ${formatBytes(result.inputSize)} → ${formatBytes(result.outputSize)}`
-            : `${formatBytes(result.inputSize)} → ${formatBytes(result.outputSize)} — this PDF is already optimized.`
+            ? t.saved(formatBytes(saved), formatBytes(result.inputSize), formatBytes(result.outputSize))
+            : t.alreadyOptimized(formatBytes(result.inputSize), formatBytes(result.outputSize))
         }
       >
         <button onClick={() => downloadBlob(result.blob, downloadName)} className="btn-primary">
-          Download compressed PDF
+          {t.download}
         </button>
       </StatusPanel>
 
@@ -297,12 +293,12 @@ function ResultView({
 }
 
 function RasterizedNote() {
+  const t = useMessages(compressMessages)
   return (
     <div className="card p-3 flex items-start gap-2">
       <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
       <p className="text-[11px] text-fg-muted leading-relaxed">
-        Output is image-only. Text is no longer selectable. Any digital signatures or form fields
-        from the original are not in this file.
+        {t.rasterizedNote}
       </p>
     </div>
   )

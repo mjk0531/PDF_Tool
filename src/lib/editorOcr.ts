@@ -13,6 +13,8 @@
 import { createWorker } from 'tesseract.js'
 import type { ExistingTextItem } from '../tools/edit/PageView'
 import { loadPdfJs } from './pdfOps'
+import { pick } from '../i18n'
+import editMessages from '../i18n/messages/edit'
 
 const OCR_RENDER_DPI = 200 // higher DPI = better accuracy, slower
 
@@ -32,7 +34,7 @@ export async function ocrPageToEditableItems(
   language: string = 'eng+kor',
   onProgress?: (status: string, fraction: number) => void,
 ): Promise<{ items: ExistingTextItem[]; pageWidth: number; pageHeight: number }> {
-  onProgress?.('Loading OCR engine...', 0.05)
+  onProgress?.(pick(editMessages).ocr.loadingEngine, 0.05)
 
   const pdf = await loadPdfJs(file)
   const page = await pdf.getPage(pageNumber)
@@ -50,7 +52,7 @@ export async function ocrPageToEditableItems(
   await page.render({ canvasContext: ctx, viewport }).promise
   page.cleanup()
 
-  onProgress?.('Recognizing text...', 0.2)
+  onProgress?.(pick(editMessages).ocr.recognizing, 0.2)
 
   // Lightweight preprocessing — Otsu binarization usually helps for document scans
   applyOtsuBinarize(ctx, canvas.width, canvas.height)
@@ -100,7 +102,7 @@ export async function ocrPageToEditableItems(
     idx += 1
   }
 
-  onProgress?.('Done', 1)
+  onProgress?.(pick(editMessages).ocr.done, 1)
 
   return { items, pageWidth: basePts.width, pageHeight: basePts.height }
 }

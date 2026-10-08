@@ -9,11 +9,13 @@ import { ProgressBar } from '../components/ProgressBar'
 import { pdfToPptx } from '../lib/office'
 import { downloadBlob, formatBytes } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'pdf-to-ppt')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import officeMessages from '../i18n/messages/office'
 
 export function PdfToPpt() {
+  const meta = useToolMeta('pdf-to-ppt')
+  const t = useMessages(officeMessages)
   const [file, setFile] = useState<File | null>(null)
   const [dpi, setDpi] = useState(150)
   const [running, setRunning] = useState(false)
@@ -35,7 +37,7 @@ export function PdfToPpt() {
       )
       setResult(blob)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Conversion failed')
+      alert(e instanceof Error ? e.message : t.conversionFailed)
     } finally {
       setRunning(false)
       setProgress(null)
@@ -61,7 +63,7 @@ export function PdfToPpt() {
         rightSlot={
           <button onClick={run} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Building slides...' : 'Convert to .pptx'}
+            {running ? t.ppt.building : t.ppt.convert}
           </button>
         }
       />
@@ -70,8 +72,8 @@ export function PdfToPpt() {
 
         <OptionGroup
           icon={Sliders}
-          title="Slide image DPI"
-          hint="Each PDF page becomes a slide image. Higher DPI = crisper, larger file."
+          title={t.ppt.dpiTitle}
+          hint={t.ppt.dpiHint}
         >
           <Segmented
             value={dpi}
@@ -81,19 +83,19 @@ export function PdfToPpt() {
           />
         </OptionGroup>
 
-        {progress && <ProgressBar current={progress.c} total={progress.t} label="Rendering slides..." />}
+        {progress && <ProgressBar current={progress.c} total={progress.t} label={t.ppt.rendering} />}
 
         {result && (
           <StatusPanel
             variant="success"
-            title="Presentation generated"
+            title={t.ppt.done}
             message={`${formatBytes(result.size)}`}
           >
             <button
               onClick={() => downloadBlob(result, `${stripExtension(file.name)}.pptx`)}
               className="btn-primary"
             >
-              Download .pptx
+              {t.downloadExt('.pptx')}
             </button>
           </StatusPanel>
         )}

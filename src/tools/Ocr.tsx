@@ -18,23 +18,33 @@ import { Toggle } from '../components/shared/Toggle'
 import { ProgressBar } from '../components/ProgressBar'
 import {
   DEFAULT_OCR_OPTIONS,
+  defaultOcrLanguages,
   ocrPdf,
   OCR_LANGUAGES,
-  PSM_OPTIONS,
+  PSM_VALUES,
   type OcrOptions,
   type OcrResult,
+  type PsmValue,
 } from '../lib/ocr'
 import { downloadBlob, formatBytes } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'ocr')!
+import { useToolMeta } from './registry'
+import { useLang, useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import ocrMessages from '../i18n/messages/ocr'
 
 const LOW_CONFIDENCE_THRESHOLD = 60
 
 export function Ocr() {
+  const meta = useToolMeta('ocr')
+  const { lang } = useLang()
+  const t = useMessages(ocrMessages)
+  const c = useMessages(commonMessages)
   const [file, setFile] = useState<File | null>(null)
-  const [opts, setOpts] = useState<OcrOptions>(DEFAULT_OCR_OPTIONS)
+  const [opts, setOpts] = useState<OcrOptions>(() => ({
+    ...DEFAULT_OCR_OPTIONS,
+    languages: defaultOcrLanguages(lang),
+  }))
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState<{ c: number; t: number; status: string } | null>(null)
   const [results, setResults] = useState<OcrResult[] | null>(null)
@@ -64,7 +74,7 @@ export function Ocr() {
       const out = await ocrPdf(file, opts, (c, t, status) => setProgress({ c, t, status }))
       setResults(out)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'OCR failed')
+      alert(e instanceof Error ? e.message : t.failed)
     } finally {
       setRunning(false)
       setProgress(null)
@@ -106,7 +116,7 @@ export function Ocr() {
         rightSlot={
           <button onClick={run} disabled={running} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Recognizing...' : 'Run OCR'}
+            {running ? t.running : t.run}
           </button>
         }
       />
@@ -116,11 +126,11 @@ export function Ocr() {
 
           <OptionGroup
             icon={Languages}
-            title="Languages"
+            title={t.languages.title}
             hint={
               opts.languages.length > 1
-                ? `Recognizing ${opts.languages.length} scripts simultaneously`
-                : 'Tap to add more for mixed-language documents'
+                ? t.languages.multiHint(opts.languages.length)
+                : t.languages.addHint
             }
           >
             <div className="flex flex-wrap gap-1">
@@ -150,8 +160,8 @@ export function Ocr() {
 
           <OptionGroup
             icon={LayoutTemplate}
-            title="Page Layout"
-            hint={PSM_OPTIONS.find((p) => p.value === opts.psm)?.help}
+            title={t.layout.title}
+            hint={t.psm[opts.psm as PsmValue]?.help}
           >
             <select
               value={opts.psm}
@@ -159,15 +169,15 @@ export function Ocr() {
               disabled={running}
               className="input w-full text-xs"
             >
-              {PSM_OPTIONS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
+              {PSM_VALUES.map((value) => (
+                <option key={value} value={value}>
+                  {t.psm[value].label}
                 </option>
               ))}
             </select>
           </OptionGroup>
 
-          <OptionGroup icon={Sliders} title="Render DPI" hint="Higher = better accuracy, slower">
+          <OptionGroup icon={Sliders} title={t.dpi.title} hint={t.dpi.hint}>
             <Segmented
               value={opts.dpi}
               options={[150, 200, 300, 400].map((v) => ({ value: v, label: `${v}` }))}
@@ -178,29 +188,29 @@ export function Ocr() {
 
           <OptionGroup
             icon={Wand2}
-            title="Preprocessing"
-            hint="Cleaning up the image before recognition usually helps"
+            title={t.preprocess.title}
+            hint={t.preprocess.hint}
           >
             <div className="space-y-1">
               <Toggle
                 checked={opts.preprocess.grayscale}
                 onChange={(v) => updatePreprocess('grayscale', v)}
-                label="Grayscale"
-                hint="Removes color noise"
+                label={t.preprocess.grayscale}
+                hint={t.preprocess.grayscaleHint}
                 disabled={running || opts.preprocess.binarize}
               />
               <Toggle
                 checked={opts.preprocess.contrast}
                 onChange={(v) => updatePreprocess('contrast', v)}
-                label="Auto contrast"
-                hint="Stretches faded scans to full black/white range"
+                label={t.preprocess.contrast}
+                hint={t.preprocess.contrastHint}
                 disabled={running}
               />
               <Toggle
                 checked={opts.preprocess.binarize}
                 onChange={(v) => updatePreprocess('binarize', v)}
-                label="Binarize (Otsu)"
-                hint="Pure black/white. Best for low-contrast scans, may hurt clean PDFs"
+                label={t.preprocess.binarize}
+                hint={t.preprocess.binarizeHint}
                 disabled={running}
               />
             </div>
@@ -208,15 +218,15 @@ export function Ocr() {
 
           <OptionGroup
             icon={Filter}
-            title="Character Whitelist"
-            hint="Restrict to these characters only. Leave empty for any."
+            title={t.whitelist.title}
+            hint={t.whitelist.hint}
           >
             <input
               type="text"
               value={opts.whitelist}
               onChange={(e) => setOpts({ ...opts, whitelist: e.target.value })}
               disabled={running}
-              placeholder="e.g. 0123456789 for digits only"
+              placeholder={t.whitelist.placeholder}
               className="input w-full text-xs font-mono"
             />
           </OptionGroup>
@@ -224,7 +234,7 @@ export function Ocr() {
           <div className="card p-3 flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <p className="text-[11px] text-fg-muted leading-relaxed">
-              First run downloads each language model (~5-15 MB). Cached afterward. All processing stays in your browser.
+              {t.modelNotice}
             </p>
           </div>
 
@@ -235,7 +245,7 @@ export function Ocr() {
                 className="btn-secondary w-full"
               >
                 <Copy className="w-3.5 h-3.5" />
-                Copy all text
+                {t.copyAll}
               </button>
               <button
                 onClick={() =>
@@ -246,7 +256,7 @@ export function Ocr() {
                 }
                 className="btn-primary w-full"
               >
-                Download .txt
+                {t.downloadTxt}
               </button>
             </div>
           )}
@@ -265,11 +275,11 @@ export function Ocr() {
             <>
               <StatusPanel
                 variant={stats.avgConf >= 80 ? 'success' : stats.avgConf >= 60 ? 'info' : 'error'}
-                title={`Recognized ${results.length} page${results.length === 1 ? '' : 's'} · ${stats.avgConf.toFixed(1)}% avg confidence`}
+                title={t.result.title(results.length, stats.avgConf.toFixed(1))}
                 message={
                   stats.lowConfCount > 0
-                    ? `${stats.lowConfCount} of ${stats.totalWords} words flagged as low-confidence (highlighted below). ${formatBytes(new Blob([fullText]).size)} text.`
-                    : `${stats.totalWords} words · ${formatBytes(new Blob([fullText]).size)}`
+                    ? t.result.lowConfidence(stats.lowConfCount, stats.totalWords, formatBytes(new Blob([fullText]).size))
+                    : t.result.summary(stats.totalWords, formatBytes(new Blob([fullText]).size))
                 }
               />
 
@@ -277,7 +287,7 @@ export function Ocr() {
                 {results.map((p, idx) => (
                   <div key={p.pageNumber} className={idx > 0 ? 'mt-6 pt-4 border-t border-border' : ''}>
                     <div className="flex items-center justify-between mb-2 text-[11px]">
-                      <span className="font-semibold text-fg-muted">Page {p.pageNumber}</span>
+                      <span className="font-semibold text-fg-muted">{c.page(p.pageNumber)}</span>
                       <span className={`font-mono ${p.confidence >= 80 ? 'text-green-500' : p.confidence >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
                         {p.confidence.toFixed(1)}%
                       </span>

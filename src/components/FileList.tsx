@@ -1,6 +1,8 @@
 import { FileText, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { formatBytes } from '../lib/download'
 import type { PdfFile } from '../types'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
 
 interface Props {
   files: PdfFile[]
@@ -10,13 +12,14 @@ interface Props {
 }
 
 export function FileList({ files, selectedId, onSelect, onRemove }: Props) {
+  const c = useMessages(commonMessages)
   if (files.length === 0) return null
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between px-1">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
-          Files ({files.length})
+          {c.filesCount(files.length)}
         </span>
       </div>
       <ul className="space-y-1">
@@ -61,7 +64,7 @@ export function FileList({ files, selectedId, onSelect, onRemove }: Props) {
                     {f.totalPages !== null && (
                       <>
                         <span className="text-fg-subtle/50">·</span>
-                        <span>{f.totalPages} pages</span>
+                        <span>{c.pages(f.totalPages)}</span>
                       </>
                     )}
                     {f.error && (
@@ -78,7 +81,7 @@ export function FileList({ files, selectedId, onSelect, onRemove }: Props) {
                     onRemove(f.id)
                   }}
                   className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-bg-subtle"
-                  aria-label="Remove file"
+                  aria-label={c.removeFile}
                 >
                   <X className="w-3.5 h-3.5 text-fg-muted" />
                 </button>

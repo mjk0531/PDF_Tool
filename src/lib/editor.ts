@@ -19,6 +19,8 @@
 import { PDFDocument, rgb } from 'pdf-lib'
 import type { PDFImage } from 'pdf-lib'
 import { embedEditorFonts, segmentTextByFont, wrapTextToWidth, type EditorFontSet } from './editorFonts'
+import { pick } from '../i18n'
+import editMessages from '../i18n/messages/edit'
 
 /* ---------- Annotation types ---------- */
 
@@ -116,7 +118,7 @@ export async function exportEditedPdf(
       try {
         await applyAnnotation(pdf, page, ann, fonts, imageCache, warnings)
       } catch (e) {
-        warnings.push(`Failed to render annotation: ${(e as Error).message}`)
+        warnings.push(pick(editMessages).warnings.renderFailed((e as Error).message))
       }
     }
   }
@@ -199,7 +201,7 @@ function drawText(
         // pdf-lib threw — codepoint not encodable by this run's font.
         // Skip the offending run but continue with the rest of the line.
         warnings.push(
-          `Skipped a segment in "${run.text.slice(0, 12)}…": ${(e as Error).message}`,
+          pick(editMessages).warnings.segmentSkipped(run.text.slice(0, 12), (e as Error).message),
         )
       }
     }

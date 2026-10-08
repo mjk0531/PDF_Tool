@@ -1,6 +1,8 @@
 # PDF Toolkit
 
-**16 PDF tools — convert, compress, merge, split, OCR, and more — running entirely in your browser.** No upload, no server, no signup. Files never leave your device.
+**17 PDF tools — convert, compress, merge, split, OCR, and more — running entirely in your browser.** No upload, no server, no signup. Files never leave your device.
+
+Available in English, 한국어 (Korean) and Español (Spanish).
 
 **Live: https://mjk0531.github.io/PDF_Tool/**
 
@@ -15,6 +17,7 @@
 - **PDF to PowerPoint** *(beta)* — each PDF page becomes a slide image
 
 ### Organize
+- **Edit PDF** *(beta)* — add text, images, whiteout; edit existing text
 - **Compress PDF** — re-rasterize with adjustable DPI, quality, color/grayscale
 - **Merge PDFs** — combine multiple files in custom order
 - **Split PDF** — every N pages, or by custom ranges (`1-3; 5; 7-10`)
@@ -31,6 +34,18 @@
 
 ### OCR
 - **OCR** *(beta)* — scanned-PDF text recognition (Tesseract.js, 12 languages)
+
+## Languages
+
+The UI language is chosen on first visit, without any network lookup:
+
+1. `?lang=en|ko|es` in the URL
+2. The language previously picked in the title-bar menu (saved in `localStorage`)
+3. The browser language, if it is Korean or Spanish
+4. The device time zone — Korea → Korean, a Spanish-speaking country → Spanish
+5. Otherwise English
+
+Translations live in `src/i18n/messages/`. Each file declares `en`, `ko` and `es` side by side; TypeScript fails the build if a language is missing a key.
 
 ## Tech
 

@@ -16,12 +16,14 @@ import type { PDFFont } from 'pdf-lib'
 // TTF variant — @pdf-lib/fontkit subsets TTF reliably; the CFF-based OTF
 // throws "Not a CFF Font" on subset() due to a fontkit issue.
 import pretendardUrl from 'pretendard/dist/public/static/alternative/Pretendard-Regular.ttf?url'
+import { pick } from '../i18n'
+import editMessages from '../i18n/messages/edit'
 
 let pretendardBytesPromise: Promise<ArrayBuffer> | null = null
 function loadPretendardBytes(): Promise<ArrayBuffer> {
   if (!pretendardBytesPromise) {
     pretendardBytesPromise = fetch(pretendardUrl).then((r) => {
-      if (!r.ok) throw new Error(`Failed to load Pretendard font (${r.status})`)
+      if (!r.ok) throw new Error(pick(editMessages).errors.fontLoadFailed(r.status))
       return r.arrayBuffer()
     })
   }

@@ -1,4 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
+import { useMessages } from '../../i18n'
+import commonMessages from '../../i18n/messages/common'
 
 interface Props {
   icon: LucideIcon
@@ -9,6 +11,7 @@ interface Props {
 }
 
 export function ToolHeader({ icon: Icon, title, description, beta, rightSlot }: Props) {
+  const c = useMessages(commonMessages)
   return (
     <header className="px-6 py-4 border-b border-border bg-bg-elevated/40 flex items-center gap-4">
       <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shrink-0">
@@ -20,9 +23,9 @@ export function ToolHeader({ icon: Icon, title, description, beta, rightSlot }: 
           {beta && (
             <span
               className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400"
-              title="Output quality varies. Best for simple PDFs."
+              title={c.betaHintLong}
             >
-              BETA
+              {c.beta}
             </span>
           )}
         </div>

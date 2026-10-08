@@ -1,5 +1,7 @@
 import type { ImageRecompressStats } from '../../lib/compress'
 import { formatBytes } from '../../lib/download'
+import { useMessages } from '../../i18n'
+import compressMessages from '../../i18n/messages/compress'
 
 interface RowProps {
   label: string
@@ -17,23 +19,24 @@ function StatRow({ label, value, muted }: RowProps) {
 }
 
 export function ImageStatsCard({ stats }: { stats: ImageRecompressStats }) {
+  const t = useMessages(compressMessages).imageStats
   if (stats.imagesFound === 0) return null
 
   return (
     <div className="card p-4 text-xs text-fg-muted space-y-1.5">
       <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle mb-1">
-        Image recompression
+        {t.heading}
       </div>
-      <StatRow label="Embedded images found" value={stats.imagesFound} />
+      <StatRow label={t.found} value={stats.imagesFound} />
       <StatRow
-        label="Recompressed (JPEG / PNG)"
+        label={t.recompressed}
         value={`${stats.jpegHandled} / ${stats.flateHandled}`}
       />
       {stats.otherSkipped > 0 && (
-        <StatRow label="Skipped (unsupported format)" value={stats.otherSkipped} muted />
+        <StatRow label={t.skipped} value={stats.otherSkipped} muted />
       )}
-      <StatRow label="Replaced (smaller after recompress)" value={stats.imagesReplaced} />
-      <StatRow label="Bytes saved on images" value={formatBytes(stats.bytesSaved)} />
+      <StatRow label={t.replaced} value={stats.imagesReplaced} />
+      <StatRow label={t.bytesSaved} value={formatBytes(stats.bytesSaved)} />
     </div>
   )
 }

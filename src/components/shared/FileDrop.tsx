@@ -1,10 +1,13 @@
 import { useCallback, useRef, useState } from 'react'
 import { Upload, FileText } from 'lucide-react'
+import { useMessages } from '../../i18n'
+import commonMessages from '../../i18n/messages/common'
 
 interface Props {
   onFiles: (files: File[]) => void
   accept?: string
-  acceptLabel?: string
+  /** What the drop target takes; picks the wording of its labels. */
+  kind?: 'pdf' | 'image'
   multiple?: boolean
   compact?: boolean
   description?: string
@@ -16,13 +19,15 @@ interface Props {
 export function FileDrop({
   onFiles,
   accept = 'application/pdf,.pdf',
-  acceptLabel = 'PDF files',
+  kind = 'pdf',
   multiple = true,
   compact = false,
   description,
   filterFn,
   noDrag = false,
 }: Props) {
+  const c = useMessages(commonMessages)
+  const labels = c.fileKinds[kind]
   const [isDragging, setIsDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
@@ -102,7 +107,7 @@ export function FileDrop({
       >
         <Upload className="w-4 h-4" />
         <span className="text-sm font-medium">
-          {multiple ? `Add more ${acceptLabel}` : `Select ${acceptLabel}`}
+          {multiple ? labels.addMore : labels.select}
         </span>
         <input
           ref={inputRef}
@@ -151,13 +156,13 @@ export function FileDrop({
         </div>
         <div className="text-center">
           <h2 className="text-lg font-semibold mb-1">
-            {isDragging ? `Drop your ${acceptLabel} here` : `Drag & drop ${acceptLabel}`}
+            {isDragging ? labels.dropHere(multiple) : labels.dragDrop(multiple)}
           </h2>
           <p className="text-sm text-fg-muted">
-            or <span className="text-accent font-medium">click to browse</span>
+            {c.or} <span className="text-accent font-medium">{c.clickToBrowse}</span>
           </p>
           <p className="text-xs text-fg-subtle mt-3">
-            {description ?? 'Files never leave your browser'}
+            {description ?? c.filesStayLocal}
           </p>
         </div>
         <input

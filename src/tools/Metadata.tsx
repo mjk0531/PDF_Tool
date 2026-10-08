@@ -7,9 +7,10 @@ import { StatusPanel } from '../components/shared/StatusPanel'
 import { readMetadata, writeMetadata, type PdfMetadata } from '../lib/pdfOps'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'metadata')!
+import { useToolMeta } from './registry'
+import { useLang, useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
+import metadataMessages from '../i18n/messages/metadata'
 
 const EMPTY: PdfMetadata = {
   title: '',
@@ -22,18 +23,25 @@ const EMPTY: PdfMetadata = {
   modificationDate: null,
 }
 
-const FIELDS: { key: keyof PdfMetadata; label: string; readOnly?: boolean }[] = [
-  { key: 'title', label: 'Title' },
-  { key: 'author', label: 'Author' },
-  { key: 'subject', label: 'Subject' },
-  { key: 'keywords', label: 'Keywords (comma-separated)' },
-  { key: 'creator', label: 'Creator' },
-  { key: 'producer', label: 'Producer' },
-  { key: 'creationDate', label: 'Created', readOnly: true },
-  { key: 'modificationDate', label: 'Modified', readOnly: true },
+// Labels come from the messages file (`fields[key]`).
+const FIELDS: { key: keyof PdfMetadata; readOnly?: boolean }[] = [
+  { key: 'title' },
+  { key: 'author' },
+  { key: 'subject' },
+  { key: 'keywords' },
+  { key: 'creator' },
+  { key: 'producer' },
+  { key: 'creationDate', readOnly: true },
+  { key: 'modificationDate', readOnly: true },
 ]
 
 export function Metadata() {
+  const meta = useToolMeta('metadata')
+  const t = useMessages(metadataMessages)
+  const c = useMessages(commonMessages)
+  const { lang } = useLang()
+  // Dates follow the UI language; keep the browser's regional variant when it matches (en-GB, es-MX...)
+  const dateLocale = navigator.language.startsWith(lang) ? navigator.language : lang
   const [file, setFile] = useState<File | null>(null)
   const [original, setOriginal] = useState<PdfMetadata>(EMPTY)
   const [edited, setEdited] = useState<PdfMetadata>(EMPTY)
@@ -66,7 +74,7 @@ export function Metadata() {
       const bytes = await writeMetadata(file, edited)
       setResult(bytesToBlob(bytes, 'application/pdf'))
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Save failed')
+      alert(e instanceof Error ? e.message : t.failed)
     } finally {
       setRunning(false)
     }
@@ -92,7 +100,7 @@ export function Metadata() {
         rightSlot={
           <button onClick={run} disabled={running || !dirty} className="btn-primary">
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Saving...' : 'Save metadata'}
+            {running ? t.saving : t.save}
           </button>
         }
       />
@@ -105,12 +113,12 @@ export function Metadata() {
             const display =
               f.key === 'creationDate' || f.key === 'modificationDate'
                 ? v
-                  ? new Date(v as string).toLocaleString()
+                  ? new Date(v as string).toLocaleString(dateLocale)
                   : '—'
                 : (v as string)
             return (
               <div key={f.key} className="space-y-1.5">
-                <label className="text-xs font-medium text-fg-muted">{f.label}</label>
+                <label className="text-xs font-medium text-fg-muted">{t.fields[f.key]}</label>
                 <input
                   type="text"
                   value={display}
@@ -118,7 +126,7 @@ export function Metadata() {
                   onChange={(e) => setEdited({ ...edited, [f.key]: e.target.value })}
                   disabled={running}
                   className="input w-full text-sm"
-                  placeholder={f.readOnly ? '' : 'Empty'}
+                  placeholder={f.readOnly ? '' : t.empty}
                 />
               </div>
             )
@@ -128,14 +136,14 @@ export function Metadata() {
         {result && (
           <StatusPanel
             variant="success"
-            title="Metadata saved"
+            title={t.saved}
             message={`${formatBytes(result.size)}`}
           >
             <button
               onClick={() => downloadBlob(result, `${stripExtension(file.name)}_metadata.pdf`)}
               className="btn-primary"
             >
-              Download
+              {c.download}
             </button>
           </StatusPanel>
         )}

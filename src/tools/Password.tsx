@@ -9,13 +9,15 @@ import { removePassword } from '../lib/pdfOps'
 import { loadPdfDocument } from '../lib/converter'
 import { downloadBlob, formatBytes, bytesToBlob } from '../lib/download'
 import { stripExtension } from '../lib/converter'
-import { TOOLS } from './registry'
-
-const meta = TOOLS.find((t) => t.id === 'password')!
+import { useToolMeta } from './registry'
+import { useMessages } from '../i18n'
+import passwordMessages from '../i18n/messages/password'
 
 type Mode = 'remove' | 'add'
 
 export function Password() {
+  const meta = useToolMeta('password')
+  const t = useMessages(passwordMessages)
   const [file, setFile] = useState<File | null>(null)
   const [mode, setMode] = useState<Mode>('remove')
   const [password, setPassword] = useState('')
@@ -51,16 +53,14 @@ export function Password() {
     setResult(null)
     try {
       if (mode === 'add') {
-        alert(
-          'Adding password protection requires native PDF encryption support that pure browser libraries do not implement. This action is disabled.',
-        )
+        alert(t.addUnavailableAlert)
         return
       }
       const bytes = await removePassword(file)
       void password // signaled via UI hint only; pdf-lib's ignoreEncryption path doesn't use it
       setResult(bytesToBlob(bytes, 'application/pdf'))
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Operation failed')
+      alert(e instanceof Error ? e.message : t.failed)
     } finally {
       setRunning(false)
     }
@@ -86,10 +86,10 @@ export function Password() {
             onClick={run}
             disabled={running || mode === 'add'}
             className="btn-primary"
-            title={mode === 'add' ? 'Adding passwords requires native encryption (not available in browser)' : ''}
+            title={mode === 'add' ? t.addUnavailableTitle : ''}
           >
             <Sparkles className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`} />
-            {running ? 'Working...' : mode === 'remove' ? 'Strip encryption' : 'Add password'}
+            {running ? t.working : mode === 'remove' ? t.stripEncryption : t.addPassword}
           </button>
         }
       />
@@ -97,15 +97,15 @@ export function Password() {
         <aside className="w-80 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-6">
           <FilePill
             file={file}
-            detail={encrypted === true ? 'Encrypted' : encrypted === false ? 'Not encrypted' : undefined}
+            detail={encrypted === true ? t.encrypted : encrypted === false ? t.notEncrypted : undefined}
             onRemove={() => { setFile(null); setResult(null) }}
           />
-          <OptionGroup icon={mode === 'remove' ? Unlock : Lock} title="Mode">
+          <OptionGroup icon={mode === 'remove' ? Unlock : Lock} title={t.mode}>
             <Segmented
               value={mode}
               options={[
-                { value: 'remove', label: 'Remove' },
-                { value: 'add', label: 'Add' },
+                { value: 'remove', label: t.modes.remove },
+                { value: 'add', label: t.modes.add },
               ]}
               onChange={(v) => setMode(v as Mode)}
               disabled={running}
@@ -113,15 +113,15 @@ export function Password() {
           </OptionGroup>
           {mode === 'remove' && (
             <OptionGroup
-              title="Password (if known)"
-              hint="Optional. Some PDFs have only restrictions and can be stripped without a password."
+              title={t.passwordLabel}
+              hint={t.passwordHint}
             >
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={running}
-                placeholder="Leave blank if unknown"
+                placeholder={t.passwordPlaceholder}
                 className="input w-full text-xs"
               />
             </OptionGroup>
@@ -130,7 +130,7 @@ export function Password() {
             <div className="card p-3 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
               <p className="text-[11px] text-fg-muted leading-relaxed">
-                Adding password protection requires native PDF encryption (RC4 / AES). Browser-side libraries do not implement encryption — only decryption / removal. Use a desktop tool such as <span className="font-mono">qpdf</span> for adding passwords.
+                {t.addExplanation(<span className="font-mono">qpdf</span>)}
               </p>
             </div>
           )}
@@ -139,19 +139,19 @@ export function Password() {
           {result && (
             <StatusPanel
               variant="success"
-              title="Encryption stripped"
-              message={`${formatBytes(result.size)} · output is unrestricted`}
+              title={t.stripped}
+              message={`${formatBytes(result.size)} · ${t.unrestricted}`}
             >
               <button
                 onClick={() => downloadBlob(result, `${stripExtension(file.name)}_unlocked.pdf`)}
                 className="btn-primary"
               >
-                Download unlocked PDF
+                {t.downloadUnlocked}
               </button>
             </StatusPanel>
           )}
           {!result && encrypted === false && mode === 'remove' && (
-            <StatusPanel variant="info" title="Not encrypted" message="This PDF has no encryption to remove." />
+            <StatusPanel variant="info" title={t.notEncrypted} message={t.nothingToRemove} />
           )}
         </div>
       </div>

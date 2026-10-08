@@ -1,5 +1,7 @@
 import { FileText, X } from 'lucide-react'
 import { formatBytes } from '../../lib/download'
+import { useMessages } from '../../i18n'
+import commonMessages from '../../i18n/messages/common'
 
 interface Props {
   file: File
@@ -8,6 +10,7 @@ interface Props {
 }
 
 export function FilePill({ file, onRemove, detail }: Props) {
+  const c = useMessages(commonMessages)
   return (
     <div className="flex items-center gap-3 p-2.5 rounded-lg bg-bg-elevated border border-border group">
       <div className="w-9 h-9 rounded-md bg-bg-subtle flex items-center justify-center shrink-0">
@@ -28,6 +31,8 @@ export function FilePill({ file, onRemove, detail }: Props) {
       {onRemove && (
         <button
           onClick={onRemove}
+          aria-label={c.removeFile}
+          title={c.removeFile}
           className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-bg-subtle"
         >
           <X className="w-3.5 h-3.5 text-fg-muted" />

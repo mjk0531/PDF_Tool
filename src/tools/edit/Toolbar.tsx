@@ -1,5 +1,7 @@
 import { MousePointer2, Type, Image as ImageIcon, Eraser, Upload } from 'lucide-react'
 import type { Tool } from './PageView'
+import { useMessages } from '../../i18n'
+import editMessages from '../../i18n/messages/edit'
 
 interface Props {
   tool: Tool
@@ -10,11 +12,11 @@ interface Props {
   pendingImagePresent: boolean
 }
 
-const TOOLS: { id: Tool; label: string; icon: typeof MousePointer2; help: string }[] = [
-  { id: 'select', label: 'Select', icon: MousePointer2, help: 'Hover existing text to edit it' },
-  { id: 'add-text', label: 'Text', icon: Type, help: 'Click on a page to add new text' },
-  { id: 'image', label: 'Image', icon: ImageIcon, help: 'Upload and click to place' },
-  { id: 'whiteout', label: 'Whiteout', icon: Eraser, help: 'Drag a rectangle to cover content' },
+const TOOLS: { id: Tool; icon: typeof MousePointer2 }[] = [
+  { id: 'select', icon: MousePointer2 },
+  { id: 'add-text', icon: Type },
+  { id: 'image', icon: ImageIcon },
+  { id: 'whiteout', icon: Eraser },
 ]
 
 export function Toolbar({
@@ -25,6 +27,7 @@ export function Toolbar({
   onPickImage,
   pendingImagePresent,
 }: Props) {
+  const m = useMessages(editMessages).toolbar
   return (
     <div className="space-y-4">
       {/* Tool grid */}
@@ -46,7 +49,7 @@ export function Toolbar({
               `}
             >
               <Icon className="w-4 h-4" />
-              <div className="text-[11px] font-semibold">{t.label}</div>
+              <div className="text-[11px] font-semibold">{m.tools[t.id].label}</div>
             </button>
           )
         })}
@@ -54,14 +57,14 @@ export function Toolbar({
 
       {/* Active-tool help */}
       <p className="text-[11px] text-fg-subtle leading-relaxed">
-        {TOOLS.find((t) => t.id === tool)?.help}
+        {m.tools[tool].help}
       </p>
 
       {/* Text style — only when text tools are active */}
       {(tool === 'add-text' || tool === 'select') && (
         <div className="space-y-2">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-            Text style
+            {m.textStyle}
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -76,14 +79,14 @@ export function Toolbar({
                 })
               }
               className="input flex-1 text-xs"
-              title="Font size (pt)"
+              title={m.fontSize}
             />
             <input
               type="color"
               value={textStyle.color}
               onChange={(e) => onTextStyleChange({ ...textStyle, color: e.target.value })}
               className="w-9 h-9 rounded-md border border-border cursor-pointer bg-transparent"
-              title="Color"
+              title={m.color}
             />
           </div>
         </div>
@@ -93,11 +96,11 @@ export function Toolbar({
       {tool === 'image' && (
         <div className="space-y-2">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-subtle">
-            Image
+            {m.image}
           </div>
           <label className="btn-secondary w-full cursor-pointer justify-center text-xs">
             <Upload className="w-3.5 h-3.5" />
-            {pendingImagePresent ? 'Pick different image' : 'Choose image…'}
+            {pendingImagePresent ? m.pickDifferentImage : m.chooseImage}
             <input
               type="file"
               accept="image/png,image/jpeg,.png,.jpg,.jpeg"
@@ -111,7 +114,7 @@ export function Toolbar({
           </label>
           {pendingImagePresent && (
             <p className="text-[11px] text-fg-subtle">
-              Click anywhere on a page to drop the image. Drag to reposition; corner handle resizes.
+              {m.placeImageHint}
             </p>
           )}
         </div>

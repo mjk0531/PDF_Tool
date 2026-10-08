@@ -1,6 +1,8 @@
 import { Download, Eye } from 'lucide-react'
 import { formatBytes, downloadBlob } from '../lib/download'
 import type { ConvertedPage } from '../lib/converter'
+import { useMessages } from '../i18n'
+import commonMessages from '../i18n/messages/common'
 
 interface Props {
   pages: ConvertedPage[]
@@ -8,15 +10,16 @@ interface Props {
 }
 
 export function PreviewGrid({ pages, emptyMessage }: Props) {
+  const c = useMessages(commonMessages)
   if (pages.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="w-12 h-12 rounded-xl bg-bg-subtle flex items-center justify-center mb-3">
           <Eye className="w-5 h-5 text-fg-subtle" />
         </div>
-        <p className="text-sm text-fg-muted">{emptyMessage ?? 'No pages converted yet'}</p>
+        <p className="text-sm text-fg-muted">{emptyMessage ?? c.noPagesYet}</p>
         <p className="text-xs text-fg-subtle mt-1">
-          Adjust settings and click Convert to generate images
+          {c.noPagesHint}
         </p>
       </div>
     )
@@ -34,7 +37,7 @@ export function PreviewGrid({ pages, emptyMessage }: Props) {
             <div className="aspect-[3/4] bg-bg-subtle relative overflow-hidden">
               <img
                 src={url}
-                alt={`Page ${p.pageNumber}`}
+                alt={c.page(p.pageNumber)}
                 className="w-full h-full object-contain"
                 onLoad={() => {
                   // We keep URL for hover/download. Revoke when grid unmounts is okay; for simplicity rely on GC.
@@ -46,13 +49,13 @@ export function PreviewGrid({ pages, emptyMessage }: Props) {
                   className="btn-primary py-1.5 px-3 text-xs w-full"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Download
+                  {c.download}
                 </button>
               </div>
             </div>
             <div className="p-2.5 space-y-0.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold">Page {p.pageNumber}</span>
+                <span className="text-xs font-semibold">{c.page(p.pageNumber)}</span>
                 <span className="text-[10px] text-fg-subtle font-mono">
                   {p.width}×{p.height}
                 </span>
