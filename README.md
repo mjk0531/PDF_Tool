@@ -17,7 +17,7 @@ Available in English, 한국어 (Korean) and Español (Spanish).
 - **PDF to PowerPoint** *(beta)* — each PDF page becomes a slide image
 
 ### Organize
-- **Edit PDF** *(beta)* — add text, images, whiteout; edit existing text
+- **Edit PDF** *(beta)* — click any line or paragraph to rewrite it in the document's own font (original glyphs are removed, not covered; colour, size, weight and alignment detected); scanned pages are read with OCR and repainted over a background rebuilt from the paper around them; live preview of the saved result, find & replace, undo/redo, add text and images, background-matching erase
 - **Compress PDF** — re-rasterize with adjustable DPI, quality, color/grayscale
 - **Merge PDFs** — combine multiple files in custom order
 - **Split PDF** — every N pages, or by custom ranges (`1-3; 5; 7-10`)

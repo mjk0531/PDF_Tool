@@ -21,7 +21,7 @@ export default defineMessages<{
     },
     tools: {
       'pdf-to-image': { name: 'PDF to Image', description: 'Convert PDF pages to PNG, JPEG, or WebP' },
-      edit: { name: 'Edit PDF', description: 'Add text, images, whiteout, and edit existing text' },
+      edit: { name: 'Edit PDF', description: 'Edit existing text in its own font, scans via OCR; add text, images, erase' },
       compress: { name: 'Compress PDF', description: 'Shrink file size by re-encoding embedded images' },
       merge: { name: 'Merge PDFs', description: 'Combine multiple PDFs into one' },
       split: { name: 'Split PDF', description: 'Split a PDF by ranges or every N pages' },
@@ -49,7 +49,7 @@ export default defineMessages<{
     },
     tools: {
       'pdf-to-image': { name: 'PDF를 이미지로', description: 'PDF 페이지를 PNG, JPEG, WebP로 변환' },
-      edit: { name: 'PDF 편집', description: '텍스트·이미지 추가, 화이트아웃, 기존 텍스트 수정' },
+      edit: { name: 'PDF 편집', description: '기존 글자를 원래 글꼴로 수정, 스캔본은 OCR로 · 텍스트·이미지 추가, 지우기' },
       compress: { name: 'PDF 압축', description: '내장 이미지를 다시 인코딩해 파일 크기 축소' },
       merge: { name: 'PDF 병합', description: '여러 PDF를 하나로 합치기' },
       split: { name: 'PDF 분할', description: '범위 또는 N페이지 단위로 PDF 나누기' },
@@ -77,7 +77,7 @@ export default defineMessages<{
     },
     tools: {
       'pdf-to-image': { name: 'PDF a imagen', description: 'Convierte páginas PDF a PNG, JPEG o WebP' },
-      edit: { name: 'Editar PDF', description: 'Añade texto, imágenes y corrector, o edita el texto existente' },
+      edit: { name: 'Editar PDF', description: 'Edita el texto con su propia fuente, escaneos por OCR; añade texto, imágenes, borra' },
       compress: { name: 'Comprimir PDF', description: 'Reduce el tamaño recodificando las imágenes incrustadas' },
       merge: { name: 'Unir PDF', description: 'Combina varios PDF en uno solo' },
       split: { name: 'Dividir PDF', description: 'Divide un PDF por rangos o cada N páginas' },
