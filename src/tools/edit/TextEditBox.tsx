@@ -2,17 +2,18 @@ import { useEffect, useRef } from 'react'
 import { GripVertical, X } from 'lucide-react'
 import type { TextAnnotation } from '../../lib/editor'
 import { apply, invert, textFrame, type Matrix } from '../../lib/editorGeometry'
-import { cssFontFamily, prefersPretendard } from '../../lib/editorFonts'
+import { cssFontFamily, cssOriginalFamily, prefersPretendard } from '../../lib/editorFonts'
 import { useMessages } from '../../i18n'
 import editMessages from '../../i18n/messages/edit'
 
 const metricsCache = new Map<string, { ascent: number; descent: number }>()
+let metricsCtx: CanvasRenderingContext2D | null = null
 
 /** Line-box ascent/descent (em) the browser uses for a font stack. */
 function cssMetrics(fontFamily: string) {
   const hit = metricsCache.get(fontFamily)
   if (hit) return hit
-  const ctx = document.createElement('canvas').getContext('2d')!
+  const ctx = (metricsCtx ??= document.createElement('canvas').getContext('2d')!)
   ctx.font = `100px ${fontFamily}`
   const m = ctx.measureText('Hg한')
   const res = {
@@ -31,7 +32,14 @@ export function textCss(ann: TextAnnotation, scale: number) {
     ann.source?.koreanPage,
   )
   const family = st.family === 'original' ? (ann.source?.font?.family ?? 'sans') : st.family
-  const fontFamily = cssFontFamily(family, korean)
+  // The document's own fonts first (when installed locally), then a lookalike.
+  const docFonts =
+    st.family === 'original' && ann.source
+      ? (ann.source.fonts?.length ? ann.source.fonts : ann.source.font ? [ann.source.font] : []).map(
+          (f) => `"${cssOriginalFamily(f)}"`,
+        )
+      : []
+  const fontFamily = [...docFonts, cssFontFamily(family, korean)].join(', ')
   const fontPx = st.fontSize * scale
   const { ascent, descent } = cssMetrics(fontFamily)
   const linePx = st.lineHeight * fontPx

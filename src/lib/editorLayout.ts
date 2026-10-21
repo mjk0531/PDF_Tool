@@ -54,11 +54,23 @@ export interface TextLine {
   needsCover: boolean
   /** OCR confidence 0–100. */
   confidence?: number
-  /** Horizontal scale that makes the fallback font match the original width. */
+  /**
+   * Horizontal scale: the text matrix's character width (장평) for real text,
+   * or what makes the fallback font match the original width for OCR text.
+   */
   hScale: number
   paragraphId: string
   /** Raw runs in the line's main font, for measuring the original spacing. */
   samples: { str: string; width: number }[]
+  /** Every font the line was drawn with (main font first) and what each drew. */
+  fonts: LineFont[]
+  /** Free space after the line before the next text on its row (or the text margin), points. */
+  room: number
+}
+
+export interface LineFont {
+  info: FontInfo
+  chars: string
 }
 
 export interface Paragraph {
@@ -86,16 +98,33 @@ export function stripSubsetTag(name: string): string {
   return name.replace(/^[A-Z]{6}\+/, '')
 }
 
-const SERIF_RE = /(times|serif|roman|georgia|garamond|minion|cambria|book ?antiqua|palatino|batang|myeongjo|mincho|song|ming|바탕|명조|궁서|hymjre|smyeongjo)/i
+const SERIF_RE =
+  /(times|serif|roman|georgia|garamond|minion|cambria|book ?antiqua|palatino|batang|myeong|mincho|song|ming|바탕|명조|궁서|gungs|hymj|h2mj|mjre|hcr ?batang|함초롬바탕)/i
 const MONO_RE = /(courier|mono|consol|code|d2coding|menlo|fixed)/i
-const BOLD_RE = /(bold|black|heavy|semibold|demi|extrabold|ultra|-b$|,b$|\bbd\b)/i
+// Also Hangul (HWP) PostScript names: HYwulB, H2gtrB… end in B for bold.
+const BOLD_RE = /(bold|black|heavy|semibold|demi|extrabold|ultra|-b$|,b$|\bbd\b|^(hy|h2)[a-z0-9]+b$)/i
 const ITALIC_RE = /(italic|oblique|-it$|,it$|-i$)/i
+
+/**
+ * Font names arrive as raw bytes; Korean producers (Hangul/HWP) write them in
+ * EUC-KR, which reads as mojibake ("ÈÞ¸Õ¸íÁ¶" for 휴먼명조) unless decoded.
+ */
+export function decodeFontName(name: string): string {
+  if (!/[\u0080-ÿ]/.test(name) || /[^\u0000-ÿ]/.test(name)) return name
+  try {
+    const bytes = Uint8Array.from(name, (c) => c.charCodeAt(0))
+    const decoded = new TextDecoder('euc-kr', { fatal: true }).decode(bytes)
+    return /[가-힣]/.test(decoded) ? decoded : name
+  } catch {
+    return name
+  }
+}
 
 export function describeFont(
   baseFont: string,
   flags: { bold?: boolean; black?: boolean; italic?: boolean; cssFamily?: string },
 ): FontInfo {
-  const displayName = stripSubsetTag(baseFont || '')
+  const displayName = decodeFontName(stripSubsetTag(baseFont || ''))
   const sansHint = /sans/i.test(displayName)
   let family: FontFamily = 'sans'
   if (MONO_RE.test(displayName) || flags.cssFamily === 'monospace') family = 'mono'
@@ -133,6 +162,8 @@ interface Frag {
   across: number
   width: number
   size: number
+  /** Character width relative to height (장평 / Tz), from the text matrix. */
+  hs: number
   angle: number
   fontName: string
 }
@@ -187,6 +218,7 @@ export function buildLayerLines(
       across: -t[4] * sin + t[5] * cos,
       width: it.width,
       size,
+      hs: Math.hypot(t[0], t[1]) / size,
       angle: Math.round(angle * 2) / 2,
       fontName: it.fontName,
     })
@@ -236,9 +268,11 @@ export function buildLayerLines(
         if (!blank && lastSolid) {
           // Same string drawn twice a hair apart = faux bold; keep one.
           if (f.str === lastSolid.str && Math.abs(f.along - lastSolid.along) < f.size * 0.1) continue
+          // Column / cell boundary. Word gaps — even letter-spaced labels
+          // like "상   호" that Hangul spreads across a cell — stay below 1.25 em.
           const gap = f.along - runEnd
           const size = Math.max(f.size, lastSolid.size)
-          if (gap > size * 0.8 || gap < -size * 2) flush()
+          if (gap > size * 1.25 || gap < -size * 2) flush()
         }
         run.push(f)
         if (!blank) {
@@ -266,14 +300,32 @@ function makeLayerLine(
   const startAlong = first.along
   const endAlong = Math.max(...solid.map((f) => f.along + f.width))
 
-  // Dominant font by character count
+  // Dominant font by letters drawn (bullets and colons in a symbol font don't count)
   const weight = new Map<string, number>()
-  for (const f of solid) weight.set(f.fontName, (weight.get(f.fontName) ?? 0) + f.str.length)
-  const fontName = [...weight.entries()].sort((a, b) => b[1] - a[1])[0][0]
+  for (const f of solid) {
+    const letters = (f.str.match(/[\p{L}\p{N}]/gu) ?? []).length
+    weight.set(f.fontName, (weight.get(f.fontName) ?? 0) + letters + f.str.length * 0.01)
+  }
+  const byWeight = [...weight.entries()].sort((a, b) => b[1] - a[1])
+  const fontName = byWeight[0][0]
   const main = solid.filter((f) => f.fontName === fontName)
   const fontSize = Math.max(...main.map((f) => f.size))
   const meta = lookup(fontName)
   const info = meta.info
+
+  // 장평: character width from the text matrix, weighted by text length.
+  const hsTotal = main.reduce((s, f) => s + f.hs * f.str.length, 0) / main.reduce((s, f) => s + f.str.length, 0)
+  const hScale = Math.abs(hsTotal - 1) < 0.01 || !isFinite(hsTotal) ? 1 : Math.round(hsTotal * 1000) / 1000
+
+  const fonts: LineFont[] = []
+  for (const [name] of byWeight) {
+    const fi = lookup(name).info
+    if (!fi) continue
+    const chars = solid.filter((f) => f.fontName === name).map((f) => f.str).join('')
+    const same = fonts.find((x) => x.info.baseFont === fi.baseFont)
+    if (same) same.chars += chars
+    else fonts.push({ info: fi, chars })
+  }
 
   return {
     id: `L${page}-${index}`,
@@ -295,9 +347,11 @@ function makeLayerLine(
     origin: 'layer',
     removable: true,
     needsCover: false,
-    hScale: 1,
+    hScale,
     paragraphId: '',
     samples: main.map((f) => ({ str: f.str, width: f.width })),
+    fonts,
+    room: 0,
   }
 }
 
@@ -411,28 +465,57 @@ export function buildParagraphs(lines: TextLine[], page: number, view: number[])
   }
   for (const l of other) drafts.push({ lines: [l], gap: l.fontSize * 1.2 })
 
-  // Page margins, for guessing how a lone line was aligned.
-  const lefts = flat.map((l) => l.x).sort((a, b) => a - b)
-  const rights = flat.map((l) => l.x + l.width).sort((a, b) => a - b)
-  const leftMargin = lefts.length ? lefts[Math.floor(lefts.length * 0.1)] : view[0]
-  const rightMargin = rights.length ? rights[Math.floor(rights.length * 0.9)] : view[2]
-  const pageCenter = (view[0] + view[2]) / 2
-  const pageWidth = Math.abs(view[2] - view[0])
-
+  const hints = pageHints(lines, view)
   return drafts.map((d, i) => {
     const id = `P${page}-${i}`
     for (const l of d.lines) l.paragraphId = id
-    return finishParagraph(id, page, d.lines, d.gap, { leftMargin, rightMargin, pageCenter, pageWidth })
+    return finishParagraph(id, page, d.lines, d.gap, hints)
   })
 }
 
-export function finishParagraph(
-  id: string,
-  page: number,
-  lines: TextLine[],
-  gap: number,
-  pageHints: { leftMargin: number; rightMargin: number; pageCenter: number; pageWidth: number },
-): Paragraph {
+export interface PageHints {
+  leftMargin: number
+  rightMargin: number
+  pageCenter: number
+  pageWidth: number
+  /** Lines with nothing else on their row — the only ones whose alignment can be guessed. */
+  alone: Set<string>
+}
+
+/**
+ * Row structure of a page: which lines share a baseline with other text
+ * (table rows, label/value pairs) and how much free space follows each line
+ * before the next text on its row — an edit may grow into that space.
+ * Sets `room` on every line.
+ */
+export function pageHints(lines: TextLine[], view: number[]): PageHints {
+  const flat = lines.filter((l) => Math.abs(l.angle) < 0.5)
+  const lefts = flat.map((l) => l.x).sort((a, b) => a - b)
+  const rightsSorted = flat.map((l) => l.x + l.width).sort((a, b) => a - b)
+  const leftMargin = lefts.length ? lefts[Math.floor(lefts.length * 0.1)] : view[0]
+  const rightMargin = rightsSorted.length ? rightsSorted[Math.floor(rightsSorted.length * 0.9)] : view[2]
+  const textRight = rightsSorted.length ? rightsSorted[rightsSorted.length - 1] : view[2]
+  const alone = new Set<string>()
+  for (const l of lines) l.room = 0
+  for (const l of flat) {
+    const s = l.fontSize
+    const end = l.x + l.width
+    const row = flat.filter((o) => o !== l && Math.abs(o.y - l.y) < 0.6 * Math.max(s, o.fontSize))
+    if (!row.length) alone.add(l.id)
+    const next = row.filter((o) => o.x >= end - 0.5).map((o) => o.x)
+    const limit = next.length ? Math.min(...next) - 0.5 * s : textRight
+    l.room = Math.max(0, limit - end)
+  }
+  return {
+    leftMargin,
+    rightMargin,
+    pageCenter: (view[0] + view[2]) / 2,
+    pageWidth: Math.abs(view[2] - view[0]),
+    alone,
+  }
+}
+
+export function finishParagraph(id: string, page: number, lines: TextLine[], gap: number, pageHints: PageHints): Paragraph {
   const s = lines[0].fontSize
   const lefts = lines.map((l) => l.x)
   const rights = lines.map((l) => l.x + l.width)
@@ -443,13 +526,14 @@ export function finishParagraph(
   let x = Math.min(...lefts)
 
   if (lines.length === 1) {
+    // A lone line's alignment is a guess; only guess for text alone on its
+    // row (titles, dates). Inside table rows a wrong "centre" makes edits jump.
     const l = lines[0]
     const c = centers[0]
     const offLeft = l.x - pageHints.leftMargin > 3 * s
-    if (Math.abs(l.angle) < 0.5 && offLeft && Math.abs(c - pageHints.pageCenter) < 0.04 * pageHints.pageWidth)
-      align = 'center'
-    else if (Math.abs(l.angle) < 0.5 && offLeft && Math.abs(rights[0] - pageHints.rightMargin) < 0.5 * s)
-      align = 'right'
+    const alone = pageHints.alone.has(l.id) && Math.abs(l.angle) < 0.5
+    if (alone && offLeft && Math.abs(c - pageHints.pageCenter) < 0.025 * pageHints.pageWidth) align = 'center'
+    else if (alone && offLeft && Math.abs(rights[0] - pageHints.rightMargin) < 0.5 * s) align = 'right'
     x = l.x
   } else {
     const body = lefts.slice(1)

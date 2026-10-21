@@ -6,6 +6,7 @@ import {
   coverBand,
   joinLines,
   removalBand,
+  type FontInfo,
   type PageText,
   type Paragraph,
   type TextLine,
@@ -26,14 +27,53 @@ export function isKoreanPage(pt: PageText | undefined): boolean {
   return letters > 0 && hangul / letters > 0.25
 }
 
+/**
+ * Document fonts an edit of `lines` may draw with: the lines' own fonts by
+ * how much they drew, then other fonts of the same family used on the page —
+ * a subset font rarely holds every glyph a new word needs, but a sibling
+ * often does (digits from Batang next to a 명조 heading, say).
+ */
+function candidateFonts(lines: TextLine[], pt: PageText | undefined) {
+  const own = new Map<string, { info: FontInfo; chars: string }>()
+  for (const l of lines)
+    for (const f of l.fonts) {
+      const cur = own.get(f.info.baseFont)
+      if (cur) cur.chars += f.chars
+      else own.set(f.info.baseFont, { info: f.info, chars: f.chars })
+    }
+  const ordered = [...own.values()].sort((a, b) => b.chars.length - a.chars.length)
+  const main = lines[0].font
+  const family = main?.family ?? lines[0].family
+  const bold = main?.bold ?? lines[0].bold
+  const italic = main?.italic ?? lines[0].italic
+  const others = new Map<string, { info: FontInfo; n: number }>()
+  for (const l of pt?.lines ?? [])
+    for (const f of l.fonts) {
+      // A sibling must look the same: same family, weight and slant.
+      if (own.has(f.info.baseFont) || f.info.family !== family) continue
+      if (f.info.bold !== bold || f.info.italic !== italic) continue
+      const cur = others.get(f.info.baseFont)
+      if (cur) cur.n += f.chars.length
+      else others.set(f.info.baseFont, { info: f.info, n: f.chars.length })
+    }
+  const charFonts: Record<string, string> = {}
+  for (const f of ordered) for (const ch of f.chars) charFonts[ch] ??= f.info.baseFont
+  return {
+    fonts: [...ordered.map((f) => f.info), ...[...others.values()].sort((a, b) => b.n - a.n).map((o) => o.info)],
+    charFonts,
+  }
+}
+
 /** An edit that replaces `lines` (one line, or a whole paragraph). */
 export function editFromLines(
   lines: TextLine[],
   para: Paragraph | null,
   unit: EditUnit,
-  koreanPage = false,
+  pt?: PageText,
 ): TextAnnotation {
   const first = lines[0]
+  const koreanPage = isKoreanPage(pt)
+  const { fonts, charFonts } = candidateFonts(lines, pt)
   const multi = unit === 'paragraph' && lines.length > 1 && para
   const paraIsMulti = !!para && para.lineIds.length > 1
   const align = multi
@@ -51,7 +91,8 @@ export function editFromLines(
     family: first.font ? 'original' : first.family,
     align: align === 'justify' && !multi ? 'left' : align,
     lineHeight: para && paraIsMulti ? Math.round((para.lineGap / first.fontSize) * 100) / 100 : 1.2,
-    hScale: first.needsCover ? first.hScale : 1,
+    // 장평 of the original (text matrix) or the OCR width calibration
+    hScale: first.hScale,
   }
   return {
     id: genId(),
@@ -65,6 +106,7 @@ export function editFromLines(
     style,
     wrap: !!multi,
     fit: multi ? 'none' : 'shrink',
+    room: multi ? 0 : first.room,
     indent: multi ? para!.indent : 0,
     source: {
       origin: first.origin,
@@ -75,6 +117,10 @@ export function editFromLines(
       alwaysCover: lines.some((l) => l.needsCover),
       bg: first.bg,
       font: first.font,
+      fonts,
+      charFonts,
+      hScale0: first.hScale,
+      anchor: multi ? undefined : { x: first.x, y: first.y, width: first.width },
       koreanPage,
       samples: first.samples,
       sampleSize: first.fontSize,
@@ -170,7 +216,7 @@ export function replaceAll(
     const pt = pageTexts.get(h.page)!
     const picked = linesForClick(pt, h.targetId, 'line')
     if (!picked) continue
-    const ann = editFromLines(picked.lines, picked.para, 'line', isKoreanPage(pt))
+    const ann = editFromLines(picked.lines, picked.para, 'line', pt)
     replaced += h.count
     next.push({ ...ann, text: ann.text.replace(matcher, () => replacement) })
   }

@@ -39,8 +39,13 @@ export interface TypesetOptions<F> {
   lineHeight: number
   hScale: number
   indent: number
-  /** 'shrink' condenses a single-line edit (down to 85%) to stay inside `width`. */
+  /**
+   * 'shrink' keeps a single-line edit inside its slot: it may first grow into
+   * `room` (free space after a left-aligned box), then condenses — down to
+   * 80% — and only then overflows.
+   */
   fit: 'none' | 'shrink'
+  room?: number
   choose: (ch: string) => F | null
 }
 
@@ -172,12 +177,13 @@ export function typeset<F extends TypesetFont>(opts: TypesetOptions<F>): Typeset
     push(true)
   }
 
-  // 2. Condense a single-line edit that outgrew its slot.
+  // 2. Condense a single-line edit that outgrew its slot (and the free room after it).
   let hScale = opts.hScale
   if (!opts.wrap && opts.fit === 'shrink' && opts.width > 0) {
+    const slot = opts.width + (opts.align === 'left' || opts.align === 'justify' ? Math.max(0, opts.room ?? 0) : 0)
     const widest = Math.max(0, ...rawLines.map((l) => rawWidth(l.tokens.map((t) => t.text).join(''))))
     const needed = widest * hScale
-    if (needed > opts.width) hScale = Math.max(hScale * 0.85, opts.width / widest)
+    if (needed > slot) hScale = Math.max(hScale * 0.8, slot / widest)
   }
 
   // 3. Place runs.

@@ -13,11 +13,11 @@ import { FindReplace } from './edit/FindReplace'
 import { useHistory } from './edit/useHistory'
 import { entriesSignature, previewEntries, type PagePreview } from './edit/keys'
 import { exportEditedPdf, renderEditedPage, type Annotation, type EditSession, type TextStyle } from '../lib/editor'
-import { editFromLines, editedLineIds, isKoreanPage, linesForClick, type EditUnit, type FindHit } from '../lib/editorEdits'
+import { editFromLines, editedLineIds, linesForClick, type EditUnit, type FindHit } from '../lib/editorEdits'
 import { loadPage, PatchMaker, type PageInfo } from '../lib/editorLoad'
 import { EDITOR_OCR_LANGS, ocrPage, terminateEditorOcr } from '../lib/editorOcr'
 import { preloadEditorFont } from '../lib/editorFonts'
-import { lineBox, type PageText } from '../lib/editorLayout'
+import { lineBox, pageHints, type PageText } from '../lib/editorLayout'
 import { apply, invert, makeViewport, overlapArea, type PageGeom, type Rect } from '../lib/editorGeometry'
 import 'pretendard/dist/web/static/Pretendard-Regular.css'
 import 'pretendard/dist/web/static/Pretendard-Bold.css'
@@ -202,6 +202,8 @@ export function Edit() {
           const b = lineBox(o)
           return !layerBoxes.some((lb) => overlapArea(lb, b) > 0.3 * b.width * b.height)
         })
+        // Free room per line depends on everything now on each row.
+        pageHints([...layer, ...keep], info.geom.view)
         const keepIds = new Set(keep.map((l) => l.id))
         const paras = res.paragraphs
           .map((p) => ({ ...p, lineIds: p.lineIds.filter((id) => keepIds.has(id)) }))
@@ -285,7 +287,7 @@ export function Edit() {
         }
         return
       }
-      const ann = editFromLines(fresh, picked.para, fresh.length > 1 ? 'paragraph' : 'line', isKoreanPage(pt))
+      const ann = editFromLines(fresh, picked.para, fresh.length > 1 ? 'paragraph' : 'line', pt)
       addAnnotation(ann)
     },
     [pageTexts, unit, addAnnotation],

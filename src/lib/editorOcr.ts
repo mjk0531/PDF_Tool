@@ -16,7 +16,7 @@ import { createWorker, type Worker } from 'tesseract.js'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { apply, invert, makeViewport, overlapArea, type PageGeom } from './editorGeometry'
 import { analyzeRegion, rasterFromCanvas, rgbToHex, strokeWidth, type Raster } from './editorPixels'
-import { finishParagraph, lineBox, type PageText, type Paragraph, type TextLine } from './editorLayout'
+import { finishParagraph, lineBox, pageHints, type PageText, type Paragraph, type TextLine } from './editorLayout'
 import { cssFontFamily, hasHangulOrCJK } from './editorFonts'
 import { pick } from '../i18n'
 import editMessages from '../i18n/messages/edit'
@@ -251,13 +251,7 @@ async function ocrPageNow(
   const lines = groups.flat()
   decideWeights(lines)
 
-  const view = geom.view
-  const hints = {
-    leftMargin: Math.min(...lines.map((l) => l.x), view[2]),
-    rightMargin: Math.max(...lines.map((l) => l.x + l.width), view[0]),
-    pageCenter: (view[0] + view[2]) / 2,
-    pageWidth: Math.abs(view[2] - view[0]),
-  }
+  const hints = pageHints(lines, geom.view)
   const paragraphs: Paragraph[] = groups.map((g, i) => {
     const id = `OP${pageNumber}-${i}`
     for (const l of g) l.paragraphId = id
@@ -706,6 +700,8 @@ async function toTextLine(
     hScale,
     paragraphId: '',
     samples: [],
+    fonts: [],
+    room: 0,
   }
   lineWeights.set(line, weight)
   return line

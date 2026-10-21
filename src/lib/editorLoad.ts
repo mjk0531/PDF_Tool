@@ -174,7 +174,9 @@ export async function loadPage(
     if (kind === 'ocr-layer') {
       line.removable = true
       line.needsCover = true
+      // The invisible layer's font (often GlyphLessFont) is never drawn with.
       line.font = null
+      line.fonts = []
       line.family = 'sans'
       const ascentPx = line.ascent * line.fontSize * renderScale
       if (stats.ink && ascentPx > 0) lineWeights.set(line, strokeWidth(raster, box, stats.bg, stats.ink) / ascentPx)

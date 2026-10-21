@@ -23,7 +23,7 @@ import { PDFDocument, PDFFont, PDFHexString, PDFRef, StandardFonts } from 'pdf-l
 // throws "Not a CFF Font" on subset() due to a fontkit issue.
 import pretendardRegularUrl from 'pretendard/dist/public/static/alternative/Pretendard-Regular.ttf?url'
 import pretendardBoldUrl from 'pretendard/dist/public/static/alternative/Pretendard-Bold.ttf?url'
-import type { FontFamily } from './editorLayout'
+import type { FontFamily, FontInfo } from './editorLayout'
 import type { OriginalFont } from './editorPdfFonts'
 import { pick } from '../i18n'
 import editMessages from '../i18n/messages/edit'
@@ -259,8 +259,49 @@ const CSS_STACKS: Record<FontFamily, string> = {
   mono: '"Courier New", Courier, "Liberation Mono", Pretendard, monospace',
 }
 
+const KOREAN_STACKS: Record<FontFamily, string> = {
+  sans: 'Pretendard, "Pretendard Variable", -apple-system, "Malgun Gothic", sans-serif',
+  serif: 'Batang, "바탕", "Noto Serif KR", "Nanum Myeongjo", AppleMyungjo, serif',
+  mono: '"D2Coding", "Nanum Gothic Coding", "Courier New", monospace',
+}
+
 /** CSS font-family that renders like what the save will embed. */
 export function cssFontFamily(family: FontFamily, korean: boolean): string {
-  if (korean) return 'Pretendard, "Pretendard Variable", -apple-system, "Malgun Gothic", sans-serif'
-  return CSS_STACKS[family]
+  return korean ? KOREAN_STACKS[family] : CSS_STACKS[family]
+}
+
+const localFaces = new Map<string, string>()
+let faceSheet: CSSStyleSheet | null = null
+
+/**
+ * A CSS family for one of the document's fonts that resolves to the copy
+ * installed on this computer, if there is one (`local()` matches the full or
+ * PostScript name — Hangul users usually have 휴먼명조, HY헤드라인 and friends).
+ * Text being typed then looks like the document, not like a substitute.
+ */
+export function cssOriginalFamily(info: FontInfo): string {
+  let fam = localFaces.get(info.baseFont)
+  if (fam) return fam
+  fam = `ptk-doc-${localFaces.size}`
+  localFaces.set(info.baseFont, fam)
+  const names = [...new Set([info.displayName, info.baseFont.replace(/^[A-Z]{6}\+/, '')])]
+    .filter((n) => n && n !== '—')
+    .map((n) => `local("${n.replace(/["\\]/g, '')}")`)
+  if (names.length) {
+    try {
+      if (!faceSheet) {
+        const el = document.createElement('style')
+        el.dataset.ptk = 'doc-fonts'
+        document.head.appendChild(el)
+        faceSheet = el.sheet
+      }
+      // Declared at the font's own weight, so a bold face isn't emboldened twice.
+      faceSheet?.insertRule(
+        `@font-face { font-family: "${fam}"; src: ${names.join(', ')}; font-weight: ${info.bold ? 700 : 400}; }`,
+      )
+    } catch {
+      /* the stack's fallbacks still apply */
+    }
+  }
+  return fam
 }

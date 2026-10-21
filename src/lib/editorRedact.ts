@@ -34,6 +34,93 @@ function transformRect(r: Rect, m: M6): [number, number, number, number] {
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
 }
 
+/** A glyph as drawn on the page, in user space. */
+export interface GlyphPos {
+  c: string
+  /** Baseline origin. */
+  x: number
+  y: number
+  /** Advance width along the baseline. */
+  w: number
+  size: number
+  /** Exact fill colour, 0–1 RGB. */
+  color: [number, number, number]
+}
+
+function toRgb(color: unknown): [number, number, number] {
+  const c = Array.isArray(color) ? (color as number[]) : []
+  if (c.length === 1) return [c[0], c[0], c[0]]
+  if (c.length === 3) return [c[0], c[1], c[2]]
+  if (c.length === 4) {
+    const k = c[3]
+    return [(1 - c[0]) * (1 - k), (1 - c[1]) * (1 - k), (1 - c[2]) * (1 - k)]
+  }
+  return [0, 0, 0]
+}
+
+function invertM(m: M6): M6 {
+  const det = m[0] * m[3] - m[1] * m[2]
+  return [m[3] / det, -m[1] / det, -m[2] / det, m[0] / det, (m[2] * m[5] - m[3] * m[4]) / det, (m[1] * m[4] - m[0] * m[5]) / det]
+}
+
+/**
+ * Exact glyph positions (including real space glyphs) of the characters whose
+ * baseline origin falls inside each request's box — what lets an edit keep
+ * the untouched part of a line exactly as it was.
+ */
+export async function extractGlyphs(
+  bytes: Uint8Array,
+  requests: { key: string; pageIndex: number; box: Rect }[],
+): Promise<Map<string, GlyphPos[]>> {
+  const out = new Map<string, GlyphPos[]>()
+  if (!requests.length) return out
+  const mupdf = await getMupdf()
+  const doc = mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as InstanceType<typeof mupdf.PDFDocument>
+  try {
+    const pages = [...new Set(requests.map((r) => r.pageIndex))]
+    for (const index of pages) {
+      const page = doc.loadPage(index)
+      try {
+        const toUser = invertM(page.getTransform() as M6)
+        const glyphs: GlyphPos[] = []
+        const stext = page.toStructuredText('preserve-whitespace,inhibit-spaces')
+        try {
+          stext.walk({
+            onChar(c: string, origin: number[], _font: unknown, size: number, quad: number[], color: unknown) {
+              const ox = toUser[0] * origin[0] + toUser[2] * origin[1] + toUser[4]
+              const oy = toUser[1] * origin[0] + toUser[3] * origin[1] + toUser[5]
+              glyphs.push({
+                c,
+                x: ox,
+                y: oy,
+                w: Math.hypot(quad[2] - quad[0], quad[3] - quad[1]),
+                size,
+                color: toRgb(color),
+              })
+            },
+          })
+        } finally {
+          stext.destroy()
+        }
+        for (const r of requests.filter((q) => q.pageIndex === index)) {
+          const b = r.box
+          out.set(
+            r.key,
+            glyphs
+              .filter((g) => g.x >= b.x - 0.5 && g.x <= b.x + b.width + 0.5 && g.y >= b.y && g.y <= b.y + b.height)
+              .sort((a, b2) => a.x - b2.x),
+          )
+        }
+      } finally {
+        page.destroy()
+      }
+    }
+  } finally {
+    doc.destroy()
+  }
+  return out
+}
+
 export async function removeTextInRects(bytes: Uint8Array, bands: Map<number, Rect[]>): Promise<RemovalResult> {
   const mupdf = await getMupdf()
   const doc = mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as InstanceType<typeof mupdf.PDFDocument>
