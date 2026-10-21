@@ -142,6 +142,7 @@ export function Reorder() {
 
       <div className="px-6 py-3 border-b border-border bg-bg-subtle/30">
         <FilePill
+          onReplace={(f) => onFiles([f])}
           file={file}
           detail={t.pagesKept(kept, pages.length)}
           onRemove={() => { setFile(null); setPages([]) }}

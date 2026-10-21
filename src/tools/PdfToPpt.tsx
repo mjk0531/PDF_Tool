@@ -68,7 +68,7 @@ export function PdfToPpt() {
         }
       />
       <div className="flex-1 overflow-y-auto p-6 max-w-2xl mx-auto w-full space-y-4">
-        <FilePill file={file} onRemove={() => { setFile(null); setResult(null) }} />
+        <FilePill file={file} onReplace={(f) => onFiles([f])} onRemove={() => { setFile(null); setResult(null) }} />
 
         <OptionGroup
           icon={Sliders}

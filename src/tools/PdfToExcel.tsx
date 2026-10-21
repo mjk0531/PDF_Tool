@@ -69,7 +69,7 @@ export function PdfToExcel() {
         }
       />
       <div className="flex-1 overflow-y-auto p-6 max-w-2xl mx-auto w-full space-y-4">
-        <FilePill file={file} onRemove={() => { setFile(null); setResult(null) }} />
+        <FilePill file={file} onReplace={(f) => onFiles([f])} onRemove={() => { setFile(null); setResult(null) }} />
 
         <div className="card p-4 flex items-start gap-3">
           <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />

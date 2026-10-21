@@ -169,16 +169,22 @@ export function Edit() {
     history.reset([])
   }, [history])
 
+  // What was last saved — edits made since then are "unsaved".
+  const [savedEdits, setSavedEdits] = useState<Annotation[] | null>(null)
+  const unsaved = annotations.length > 0 && annotations !== savedEdits
+  const unsavedRef = useRef(unsaved)
+  unsavedRef.current = unsaved
+
   // Unsaved edits: confirm before leaving the page.
   useEffect(() => {
-    if (!annotations.length) return
+    if (!unsaved) return
     const onBefore = (e: BeforeUnloadEvent) => {
       e.preventDefault()
       e.returnValue = ''
     }
     window.addEventListener('beforeunload', onBefore)
     return () => window.removeEventListener('beforeunload', onBefore)
-  }, [annotations.length])
+  }, [unsaved])
 
   /* ----- OCR ----- */
 
@@ -434,6 +440,7 @@ export function Edit() {
       await ensurePatches(anns)
       const result = await exportEditedPdf(session, anns)
       downloadBlob(bytesToBlob(result.bytes, 'application/pdf'), `${stripExtension(file.name)}_edited.pdf`)
+      setSavedEdits(anns)
       if (result.warnings.length) setWarnings([...new Set(result.warnings)])
     } catch (e) {
       console.error(e)
@@ -579,10 +586,9 @@ export function Edit() {
           <FilePill
             file={file}
             detail={pages.length > 0 ? c.pages(pages.length) : undefined}
-            onRemove={() => {
-              if (annotations.length && !confirm(t.confirmClose)) return
-              closeFile()
-            }}
+            confirm={() => !unsavedRef.current || window.confirm(t.confirmClose)}
+            onRemove={closeFile}
+            onReplace={setFile}
           />
           <Toolbar
             tool={tool}

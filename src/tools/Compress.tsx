@@ -152,6 +152,7 @@ export function Compress() {
 
       <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full space-y-5">
         <FilePill
+          onReplace={(f) => onFiles([f])}
           file={file}
           detail={pageCount ? c.pages(pageCount) : undefined}
           onRemove={reset}

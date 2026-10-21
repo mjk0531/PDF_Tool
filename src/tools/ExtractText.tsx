@@ -74,7 +74,7 @@ export function ExtractText() {
 
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-80 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-6">
-          <FilePill file={file} onRemove={() => { setFile(null); setPages(null) }} />
+          <FilePill file={file} onReplace={(f) => onFiles([f])} onRemove={() => { setFile(null); setPages(null) }} />
           <OptionGroup icon={FileText} title={t.output}>
             <Segmented
               value={mode}

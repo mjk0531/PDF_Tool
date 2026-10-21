@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Sparkles, GripVertical, X, ArrowUp, ArrowDown } from 'lucide-react'
+import { Sparkles, GripVertical, X, ArrowUp, ArrowDown, Trash2 } from 'lucide-react'
 import { ToolHeader } from '../components/shared/ToolHeader'
 import { FileDrop } from '../components/shared/FileDrop'
 import { DropOverlay } from '../components/shared/DropOverlay'
@@ -100,8 +100,21 @@ export function Merge() {
         <FileDrop onFiles={addFiles} compact noDrag />
 
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted mb-2 px-1">
-            {t.order(entries.length, totalPages)}
+          <div className="flex items-center justify-between mb-2 px-1">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+              {t.order(entries.length, totalPages)}
+            </div>
+            <button
+              onClick={() => {
+                setEntries([])
+                setResult(null)
+              }}
+              disabled={running}
+              className="btn-ghost text-xs px-2 py-1"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {c.clearAll}
+            </button>
           </div>
           <ul className="space-y-1.5">
             {entries.map((e, idx) => (

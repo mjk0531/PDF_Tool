@@ -96,6 +96,7 @@ export function Password() {
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-80 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-6">
           <FilePill
+            onReplace={(f) => onFiles([f])}
             file={file}
             detail={encrypted === true ? t.encrypted : encrypted === false ? t.notEncrypted : undefined}
             onRemove={() => { setFile(null); setResult(null) }}

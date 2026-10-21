@@ -69,7 +69,7 @@ export function PdfToMarkdown() {
       />
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-80 shrink-0 border-r border-border bg-bg-subtle/30 overflow-y-auto p-5 space-y-4">
-          <FilePill file={file} onRemove={() => { setFile(null); setMarkdown(null) }} />
+          <FilePill file={file} onReplace={(f) => onFiles([f])} onRemove={() => { setFile(null); setMarkdown(null) }} />
           {markdown && (
             <div className="space-y-2">
               <button

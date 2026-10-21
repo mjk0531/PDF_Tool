@@ -107,7 +107,7 @@ export default defineMessages({
     clearEdits: (n: number) => `Clear (${n})`,
     saving: 'Saving...',
     save: 'Save edited PDF',
-    confirmClose: 'Close this file? Unsaved edits will be lost.',
+    confirmClose: 'This file has unsaved edits. Close it anyway?',
     renderingProgress: (done: number, total: number) => `Reading pages… ${done} / ${total}`,
     tips: (
       <>
@@ -241,7 +241,7 @@ export default defineMessages({
     clearEdits: (n) => `지우기 (${n})`,
     saving: '저장 중...',
     save: '편집한 PDF 저장',
-    confirmClose: '이 파일을 닫을까요? 저장하지 않은 편집 내용은 사라집니다.',
+    confirmClose: '저장하지 않은 편집 내용이 있습니다. 그래도 이 파일을 닫을까요?',
     renderingProgress: (done, total) => `페이지 읽는 중… ${done} / ${total}`,
     tips: (
       <>
@@ -372,7 +372,7 @@ export default defineMessages({
     clearEdits: (n) => `Borrar (${n})`,
     saving: 'Guardando...',
     save: 'Guardar PDF editado',
-    confirmClose: '¿Cerrar este archivo? Se perderán los cambios sin guardar.',
+    confirmClose: 'Este archivo tiene cambios sin guardar. ¿Cerrarlo de todos modos?',
     renderingProgress: (done, total) => `Leyendo páginas… ${done} / ${total}`,
     tips: (
       <>

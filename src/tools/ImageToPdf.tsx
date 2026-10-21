@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Sparkles, ArrowUp, ArrowDown, X, Image as ImageIcon, Maximize2 } from 'lucide-react'
+import { Sparkles, ArrowUp, ArrowDown, X, Image as ImageIcon, Maximize2, Trash2 } from 'lucide-react'
 import { ToolHeader } from '../components/shared/ToolHeader'
 import { FileDrop } from '../components/shared/FileDrop'
 import { DropOverlay } from '../components/shared/DropOverlay'
@@ -177,6 +177,20 @@ export function ImageToPdf() {
             accept="image/jpeg,image/png,.jpg,.jpeg,.png"
             kind="image"
           />
+          <div className="flex justify-end">
+            <button
+              onClick={() => {
+                entries.forEach((e) => URL.revokeObjectURL(e.preview))
+                setEntries([])
+                setResult(null)
+              }}
+              disabled={running}
+              className="btn-ghost text-xs px-2 py-1"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {c.clearAll}
+            </button>
+          </div>
           <ul className="space-y-1.5">
             {entries.map((e, idx) => (
               <li key={e.id} className="card p-3 flex items-center gap-3 animate-slide-up">
